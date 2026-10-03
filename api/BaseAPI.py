@@ -29,7 +29,7 @@ class BaseAPI(ABC):
         """
         Execute a synchronous data query against the provider SDK or endpoint.
         """
-        pass
+        raise NotImplementedError("Synchronous query is not implemented for this provider.")
 
     @abstractmethod
     async def query_async(self, query: FinancialQuery) -> Any:
