@@ -9,4 +9,5 @@ dependencies = [
     "pydantic",
     "dotenv",
     "vectorbt",
+    "nautilus_trader",
 ]
