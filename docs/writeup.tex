@@ -1,0 +1,285 @@
+\documentclass[11pt,letterpaper]{article}
+ 
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\usepackage{siunitx}
+ 
+\definecolor{gatorblue}{HTML}{0021A5}
+\definecolor{gatororange}{HTML}{FA4616}
+ 
+\titleformat{\section}{\large\bfseries\color{gatorblue}}{\thesection}{0.6em}{}[\color{gatororange}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\setlist{itemsep=2pt, topsep=4pt}
+ 
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Gator Quant Hacks -- Systematic Trading Track}
+\rhead{\small \TeamName}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+ 
+% ---------- Metadata (edit these) ----------
+\newcommand{\NoteTitle}{Your Strategy Title Here}
+\newcommand{\Authors}{Manny Osorio, Benjamin Friedman, Emily Diaz-Silva}
+\newcommand{\NoteDate}{\today}
+ 
+\begin{document}
+ 
+% ---------- Title block ----------
+\begin{center}
+    {\LARGE\bfseries\color{gatorblue} \NoteTitle}\\[6pt]
+    {\large Quant Note -- Systematic Trading Track}\\[4pt]
+    \Authors
+\end{center}
+\vspace{4pt}
+\hrule
+\vspace{8pt}
+ 
+% ============================================================
+\section{Summary}
+% ============================================================
+% 3--5 sentences: what the strategy does, the core edge, headline results, key caveat.
+\textbf{Strategy in one line:} \dots
+ 
+\textbf{Headline results (out-of-sample):}
+\begin{itemize}
+    \item Annualized return: \dots\% \quad Annualized volatility: \dots\%
+    \item Sharpe ratio: \dots \quad Max drawdown: \dots\%
+    \item Average turnover: \dots\% per month \quad Est. capacity: \$\dots M
+\end{itemize}
+ 
+\textbf{Key takeaway:} \dots
+ 
+% ============================================================
+\section{Economic and Data Hypothesis}
+% ============================================================
+\subsection{Literature and Inspiration}
+Our strategy builds on three strands of research. First, \textbf{[topic of your
+economic mechanism, e.g., short-term reversal]}: \cite{key1} document that
+\dots, and \cite{key2} attribute this to \dots. We adopt this as our
+economic prior. Second, \textbf{[data or feature source]}: \cite{key3} show that
+\dots, motivating our use of \dots. Third, \textbf{[method]}: evolutionary
+search has been applied to trading rule discovery by \cite{allen1999}, and
+formulaic alphas are widely used in practice \cite{kakushadze2016}. Our
+contribution is to \textbf{[what is different or new, e.g., apply GP under
+a restricted, economically motivated primitive set with explicit
+multiple-testing controls]}.
+
+\subsection{Economic Rationale}
+% Why should this signal earn a premium? Risk compensation, behavioral bias,
+% structural/institutional friction, or information advantage?
+
+\dots
+ 
+\subsection{Data Hypothesis}
+% What does the dataset tell us that the market may not fully price?
+% State a falsifiable hypothesis.
+\textbf{H$_0$:} \dots \\
+\textbf{H$_1$:} \dots
+ 
+\subsection{Why the Edge Should Persist}
+% Limits to arbitrage, capacity constraints, crowding, etc.
+\dots
+ 
+% ============================================================
+\section{Data and Universe}
+% ============================================================
+\subsection{Data Sources}
+\begin{table}[H]
+\centering
+\caption{Data sources}
+\begin{tabular}{llll}
+\toprule
+Dataset & Provider & Frequency & Date Range \\
+\midrule
+Prices/returns & \dots & Daily & \dots \\
+Signal data    & \dots & \dots & \dots \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+\subsection{Universe Construction}
+% Asset class, filters (price, ADV, market cap), rebalancing of membership,
+% survivorship-bias handling.
+\dots
+ 
+\subsection{Data Cleaning and Point-in-Time Integrity}
+% Missing data, outliers/winsorization, corporate actions, reporting lags,
+% how look-ahead bias was avoided.
+\dots
+ 
+% ============================================================
+\section{Methodology}
+% ============================================================
+\subsection{Signal Construction}
+% Define the signal mathematically.
+For asset $i$ at time $t$, the raw signal is
+\begin{equation}
+    s_{i,t} = f\left(x_{i,t}, x_{i,t-1}, \dots\right).
+\end{equation}
+\dots
+ 
+\subsection{Portfolio Construction}
+% Ranking/z-scoring, long-short vs long-only, weighting scheme, rebalance frequency,
+% neutralization (sector, beta, size).
+\begin{equation}
+    w_{i,t} = \frac{z_{i,t}}{\sum_j |z_{j,t}|}, \qquad z_{i,t} = \frac{s_{i,t}-\mu_t}{\sigma_t}
+\end{equation}
+\dots
+ 
+\subsection{Backtest Design}
+% In-sample / out-of-sample split, walk-forward, parameter selection,
+% transaction cost assumptions, execution timing (e.g., signal at close, trade next open).
+\begin{itemize}
+    \item Training period: \dots \quad Out-of-sample period: \dots
+    \item Rebalance frequency: \dots
+    \item Transaction costs: \dots bps per side \quad Slippage model: \dots
+    \item Execution assumption: \dots
+\end{itemize}
+ 
+% ============================================================
+\section{Results}
+% ============================================================
+\subsection{Performance Summary}
+\begin{table}[H]
+\centering
+\caption{Performance statistics (net of costs)}
+\begin{tabular}{lrrr}
+\toprule
+Metric & In-Sample & Out-of-Sample & Benchmark \\
+\midrule
+Annualized return (\%)    & \dots & \dots & \dots \\
+Annualized volatility (\%) & \dots & \dots & \dots \\
+Sharpe ratio              & \dots & \dots & \dots \\
+Sortino ratio             & \dots & \dots & \dots \\
+Max drawdown (\%)         & \dots & \dots & \dots \\
+Calmar ratio              & \dots & \dots & \dots \\
+Hit rate (\%)             & \dots & \dots & \dots \\
+Turnover (\% / month)     & \dots & \dots & \dots \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+\subsection{Cumulative Performance}
+% Replace with your figure: \includegraphics[width=0.85\linewidth]{figures/equity_curve.pdf}
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\linewidth]{figures/equity_curve.pdf}
+\fbox{\parbox{0.8\linewidth}{\centering\vspace{3cm}Equity curve placeholder\vspace{3cm}}}
+\caption{Cumulative net returns vs.\ benchmark.}
+\end{figure}
+ 
+\subsection{Robustness and Attribution}
+% Parameter sensitivity, subperiod analysis, factor regression (alpha, betas),
+% cost sensitivity, decile/quantile spreads.
+\dots
+ 
+% ============================================================
+\section{Risk Management}
+% ============================================================
+Training an XGBoost model on MBP-10 data faces two major hurdles: overfitting to market noise and a large parameter search space [CITE THIS]. Adding Genetic Programming acts as a regularizer for the first and a search heuristic for the second [CITE THIS]. However, there still exists [BLANK]
+
+During training, the XGBoost model undergoes a backtesting engine following a fitness score tied to a financial metric [insert equation for what's inside Triton terminal].
+
+\subsection{Risk Controls}
+% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
+% sector/factor exposure limits.
+\begin{itemize}
+    \item Position limit: \dots
+    \item Volatility target: \dots
+    \item Gross / net exposure: \dots
+    \item Drawdown rule: \dots
+\end{itemize}
+
+\subsection{Risk Controls}
+% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
+% sector/factor exposure limits.
+\begin{itemize}
+    \item Position limit: \dots
+    \item Volatility target: \dots
+    \item Gross / net exposure: \dots
+    \item Drawdown rule: \dots
+\end{itemize}
+ 
+\subsection{Risk Decomposition}
+% Factor exposures (market, size, value, momentum), tail risk, VaR / CVaR,
+% performance in stress regimes (e.g., 2008, 2020, 2022).
+\dots
+ 
+% ============================================================
+\section{Liquidity and Capacity}
+% ============================================================
+\subsection{Liquidity Profile}
+% ADV participation, days-to-liquidate, bid-ask spreads of holdings.
+\dots
+ 
+\subsection{Transaction Costs and Market Impact}
+% Cost model, e.g. $\text{cost} = \text{spread}/2 + k\,\sigma\sqrt{Q/\text{ADV}}$.
+\dots
+ 
+\subsection{Capacity Estimate}
+% AUM at which Sharpe degrades materially.
+\begin{table}[H]
+\centering
+\caption{Net Sharpe ratio vs.\ assumed AUM}
+\begin{tabular}{lrrrr}
+\toprule
+AUM (\$M) & 1 & 10 & 50 & 100 \\
+\midrule
+Net Sharpe & \dots & \dots & \dots & \dots \\
+Max ADV participation (\%) & \dots & \dots & \dots & \dots \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+% ============================================================
+\section{Limitations and Next Steps}
+% ============================================================
+\subsection{Limitations}
+\begin{itemize}
+    \item Data: \dots
+    \item Overfitting / multiple-testing risk: \dots
+    \item Regime dependence: \dots
+    \item Execution and cost assumptions: \dots
+\end{itemize}
+ 
+\subsection{Next Steps}
+\begin{itemize}
+    \item \dots
+    \item \dots
+    \item \dots
+\end{itemize}
+ 
+ 
+\clearpage
+\addcontentsline{toc}{section}{References}
+\begin{thebibliography}{99}
+\small
+
+
+\bibitem{christodoulou2025}
+C.~N. Christodoulou-Volos,
+``Optimizing Trading Strategies Using Genetic Algorithms: A Review and
+Implementation,''
+\textit{Edelweiss Applied Science and Technology}, vol.~9, no.~10,
+pp.~334--345, 2025.
+\url{https://doi.org/10.55214/2576-8484.v9i10.10407}
+
+
+\end{thebibliography}
+ 
+\end{document}
+ 
