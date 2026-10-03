@@ -6,4 +6,6 @@ dependencies = [
     "databento",
     "pandas",
     "numpy",
+    "pydantic",
+    "dotenv",
 ]
