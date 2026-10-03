@@ -310,6 +310,7 @@ def select_strikes(e: pd.DataFrame, spot: float, otm_pcts: list[float]) -> dict[
     return out
 
 
+@dataclass
 class Leg:
     ticker: str
     kind: str                 # "call" or "put"
@@ -326,6 +327,7 @@ class Leg:
     def volume_on(self, day: pd.Timestamp) -> float:
         return float(self.bars["volume"].get(pd.Timestamp(day), 0.0))
 
+@dataclass
 class PricedEvent:
     """One event × one expiry bucket: the chain-derived spot, the expiry and every leg a strategy may need."""
     ticker: str
