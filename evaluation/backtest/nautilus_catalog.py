@@ -28,7 +28,7 @@ from pathlib import Path
 
 from nautilus_trader.adapters.databento import DatabentoDataLoader
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data/GLBX.MDP3"))
 CATALOG_DIR = Path(os.environ.get("CATALOG_DIR", "catalog"))
