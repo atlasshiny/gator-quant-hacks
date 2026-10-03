@@ -173,13 +173,15 @@ def save_tearsheet(engine, path: str, title: str, theme: str = "nautilus_dark") 
 
 # Workflow
 def run_window(strategy_params: dict, days, label: str, start_offset: str = "0s"):
-    """Run one BacktestNode over the given trading days. Returns (engine, daily)."""
     start, end = trading_day_window(days, start_offset=start_offset)
-    cfg = make_run_config(strategy_params, start, end)
+    cfg, strategy_cfg = make_run_config(strategy_params, start, end)
     node = BacktestNode(configs=[cfg])
-    node.run()
-    engine = node.get_engine(cfg.id)
-    return engine, daily_from_nautilus(engine, days)
+    node.build()
+    node.add_strategy_from_config(cfg.id, strategy_cfg)
+    [result] = node.run()
+    daily = daily_from_nautilus(node, cfg.id, days)
+    
+    return node, result, daily
 
 
 def run_oos(
