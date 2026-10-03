@@ -3,8 +3,8 @@ from typing import Any
 import pandas as pd
 import requests
 
-from api.BaseAPI import BaseAPI
-from api.Query import FinancialQuery
+from .BaseAPI import BaseAPI
+from .Query import FinancialQuery
 
 class FredAPI(BaseAPI):
     BASE_URL = "https://api.stlouisfed.org/fred"
