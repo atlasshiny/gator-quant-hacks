@@ -27,20 +27,18 @@ import os
 import numpy as np
 import pandas as pd
 
-from nautilus_trader.backtest.node import (
+from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.config import (
     BacktestDataConfig,
     BacktestEngineConfig,
-    BacktestNode,
     BacktestRunConfig,
     BacktestVenueConfig,
 )
-from nautilus_trader.config import ImportableStrategyConfig, LoggingConfig
-from nautilus_trader.model import InstrumentId, Venue
 
-try:
-    from nautilus_trader.model import OrderBookDepth10
-except ImportError:  # older releases
-    from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.config import ImportableStrategyConfig, LoggerConfig
+from nautilus_trader.model import InstrumentId, Venue
+from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
 from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
 from split_sample import SampleSplitter, add_trading_day, trading_day_window
@@ -70,12 +68,12 @@ def make_run_config(strategy_params: dict, start: str, end: str) -> BacktestRunC
                     config={"instrument_id": iid, **strategy_params},
                 )
             ],
-            logging=LoggingConfig(log_level="ERROR"),
+            logging=LoggerConfig(log_level="ERROR"),
         ),
         data=[
             BacktestDataConfig(
                 catalog_path=str(CATALOG_DIR),
-                data_cls=OrderBookDepth10,
+                data_type="OrderBookDepth10",
                 instrument_id=iid,
                 start_time=start,
                 end_time=end,
@@ -84,11 +82,11 @@ def make_run_config(strategy_params: dict, start: str, end: str) -> BacktestRunC
         venues=[
             BacktestVenueConfig(
                 name=VENUE_NAME,
-                oms_type="NETTING",
-                account_type="MARGIN",
-                base_currency="USD",
+                oms_type=OmsType.NETTING,
+                account_type=AccountType.MARGIN,
+                base_currency=Currency.from_str("USD"),
                 starting_balances=[f"{int(COSTS.capital)} USD"],
-                book_type="L2_MBP",  # depth10 updates an L2 book
+                book_type=BookType.L2_MBP,  # depth10 updates an L2 book
             )
         ],
     )
