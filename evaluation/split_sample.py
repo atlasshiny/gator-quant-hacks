@@ -235,20 +235,13 @@ def evaluate_walk_forward(
 
 # Example usage
 if __name__ == "__main__":
-    # ADJUST API PATH LATER IF NEEDED
-    from python.api.DatabentoAPI import DatabentoAPI  
-    from python.api.Query import FinancialQuery
-
-    api = DatabentoAPI()
-    df = api.query(
-        FinancialQuery(
-            dataset="GLBX.MDP3",
-            symbols=["ES.c.0"],
-            schema="mbp-10",
-            start="2024-01-08T00:00:00Z",
-            end="2024-01-12T23:59:59Z",
-            stype_in="continuous",
-        )
+    from local_data import load_local, TOP_OF_BOOK
+ 
+    # Reads .dbn.zst files from $DATA_DIR (HiPerGator). 
+    df = load_local(
+        start="2024-01-08T00:00:00Z",
+        end="2024-01-13T00:00:00Z",   # end is exclusive
+        columns=TOP_OF_BOOK,
     )
 
     # Toy example: order-book imbalance signal with a fitted threshold.
