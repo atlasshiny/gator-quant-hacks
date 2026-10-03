@@ -59,3 +59,17 @@ class DatabentoAPI(BaseAPI):
         # Format output
         # Convert directly to a pandas DataFrame (handles timestamps and schemas automatically)
         return data_store.to_df()
+
+if __name__ == "__main__":
+    # Example usage
+    from api.Query import FinancialQuery
+
+    query = FinancialQuery(
+        dataset="GLBX.MDP3",
+        symbols="ES.c.0",
+        schema="trades",
+        start="2024-01-01T00:00:00Z"
+    )
+    api = DatabentoAPI()
+    df = api.query(query)
+    print(df)
