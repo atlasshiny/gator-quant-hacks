@@ -17,4 +17,4 @@ module load conda cuda/12.8.1
 source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 mkdir -p logs
 
-python python/utils/data_loader.py
+uv run python/utils/data_loader.py

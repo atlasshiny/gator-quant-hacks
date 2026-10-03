@@ -22,4 +22,4 @@ export NCCL_IB_DISABLE=0
 export NCCL_SOCKET_IFNAME=eth0
 # Execute the driver script
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
-python python/kernels/distributed_ga.py
+uv run python/kernels/distributed_ga.py
