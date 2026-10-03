@@ -1,10 +1,6 @@
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
-class Query(BaseModel):
-    query: list[str] # List of symbols to querry the backend API for
-    # Additional fields can be added here as needed
-
 class BaseAPI(ABC):
     """
         Abstract base class for all API implementations.
