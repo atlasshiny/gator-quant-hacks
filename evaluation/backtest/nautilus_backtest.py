@@ -116,6 +116,7 @@ def daily_from_nautilus(engine, trading_days, costs: CostModel = COSTS) -> pd.Da
         {"total": pd.to_numeric(acct["total"], errors="coerce").values},
         index=_utc_index(acct.index),
     ).dropna()
+    
     bal_day = bal.groupby(add_trading_day(bal).values)["total"].last()
     bal_day = bal_day.reindex(days).ffill().fillna(costs.capital)
     gross_pnl = bal_day - bal_day.shift(1).fillna(costs.capital)
@@ -155,18 +156,19 @@ def daily_from_nautilus(engine, trading_days, costs: CostModel = COSTS) -> pd.Da
 
 
 # Tearsheet
-def save_tearsheet(engine, path: str, title: str, theme: str = "nautilus_dark") -> None:
-    """Interactive Plotly HTML report. Needs the 'visualization' extra."""
+def save_tearsheet(result, node, path: str, title: str, theme: str = "nautilus_dark") -> None:
     try:
-        from nautilus_trader.analysis import TearsheetConfig, create_tearsheet
+        from nautilus_trader.analysis import create_tearsheet
+        from nautilus_trader.config import TearsheetConfig   # moved: now in config
     except ImportError:
         print('Tearsheet skipped. Install: uv pip install --pre "nautilus_trader[visualization]"')
         return
     create_tearsheet(
-        engine=engine,
+        engine=result,          # the BacktestResult from node.run()
+        node=node,              # needed for starting balances; requires dispose_on_completion=False
         output_path=path,
         title=title,
-        config=TearsheetConfig(theme=theme),  # themes: plotly_white/dark, nautilus, nautilus_dark
+        config=TearsheetConfig(theme=theme),
     )
     print(f"Saved {path}")
 
@@ -180,7 +182,7 @@ def run_window(strategy_params: dict, days, label: str, start_offset: str = "0s"
     node.add_strategy_from_config(cfg.id, strategy_cfg)
     [result] = node.run()
     daily = daily_from_nautilus(node, cfg.id, days)
-    
+
     return node, result, daily
 
 
@@ -205,12 +207,12 @@ def run_oos(
     print(f"OOS: {test_days[0].date()} -> {test_days[-1].date()} "
           f"({len(test_days)}d), embargo {embargo}")
 
-    engine, oos_daily = run_window(strategy_params, test_days, "oos", start_offset=embargo)
-    save_tearsheet(engine, "oos_tearsheet.html", "Out-of-sample backtest")
+    node, oos_result, oos_daily = run_window(strategy_params, test_days, "oos", start_offset=embargo)
+    save_tearsheet(oos_result, node, "oos_tearsheet.html", "Out-of-sample backtest")
 
     pd.set_option("display.float_format", lambda v: f"{v:,.4f}")
     if also_run_is:
-        _, is_daily = run_window(strategy_params, train_days, "is")
+        _, is_result, is_daily = run_window(strategy_params, train_days, "is")
         table = compare_is_oos(is_daily, oos_daily, COSTS)
         plot_equity_curve(is_daily, oos_daily, COSTS, "equity_curve.png")
     else:
