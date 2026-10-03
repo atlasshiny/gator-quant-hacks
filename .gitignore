@@ -125,6 +125,9 @@ venv.bak/
 Thumbs.db
 desktop.ini
 
+# Logs
+/logs
+
 # Custom Exclusion
 /data
 
