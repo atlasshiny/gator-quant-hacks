@@ -127,3 +127,6 @@ desktop.ini
 
 # Custom Exclusion
 /data
+
+#cache
+/.massive_cache
