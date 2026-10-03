@@ -9,4 +9,15 @@ dependencies = [
     "pydantic",
     "dotenv",
     "vectorbt",
+    "polars",
+    "torch>=2.4.0",
+    "triton>=3.0.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cuda" }]
