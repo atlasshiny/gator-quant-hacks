@@ -37,7 +37,7 @@ from nautilus_trader.config import (
 
 from nautilus_trader.config import ImportableStrategyConfig, LoggerConfig
 from nautilus_trader.model import InstrumentId, Venue
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
 from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
@@ -57,21 +57,20 @@ COSTS = CostModel(fee_per_contract=2.0, slippage_ticks=0.0, capital=1_000_000.0)
 
 
 # Config
-def make_run_config(strategy_params: dict, start: str, end: str) -> BacktestRunConfig:
+def make_run_config(strategy_params: dict, start: str, end: str):
     iid = InstrumentId.from_str(INSTRUMENT_ID)
-    return BacktestRunConfig(
+
+    strategy_config = ImportableStrategyConfig(
+        strategy_path=STRATEGY_PATH,
+        config_path=STRATEGY_CONFIG_PATH,
+        config={"instrument_id": str(iid), **strategy_params},  # str(), as in the docs
+    )
+
+    run_config = BacktestRunConfig(
         engine=BacktestEngineConfig(
-            strategies=[
-                ImportableStrategyConfig(
-                    strategy_path=STRATEGY_PATH,
-                    config_path=STRATEGY_CONFIG_PATH,
-                    config={"instrument_id": iid, **strategy_params},
-                )
-            ],
-            logging=LoggerConfig(log_level="ERROR"),
+            logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         ),
-        data=[
-            BacktestDataConfig(
+        data=[BacktestDataConfig(
                 catalog_path=str(CATALOG_DIR),
                 data_type="OrderBookDepth10",
                 instrument_id=iid,
@@ -79,17 +78,18 @@ def make_run_config(strategy_params: dict, start: str, end: str) -> BacktestRunC
                 end_time=end,
             )
         ],
-        venues=[
-            BacktestVenueConfig(
+        venues=[BacktestVenueConfig(
                 name=VENUE_NAME,
                 oms_type=OmsType.NETTING,
                 account_type=AccountType.MARGIN,
                 base_currency=Currency.from_str("USD"),
                 starting_balances=[f"{int(COSTS.capital)} USD"],
                 book_type=BookType.L2_MBP,  # depth10 updates an L2 book
-            )
+            ) 
         ],
+        dispose_on_completion=False,   # NEW: keep reports and cache alive after run()
     )
+    return run_config, strategy_config
 
 
 # Engine results -> daily frame expected by metrics.py
