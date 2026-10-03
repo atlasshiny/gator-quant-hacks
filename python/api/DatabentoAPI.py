@@ -1,10 +1,10 @@
 from typing import Any
 import os
 import pandas as pd
-from databento import DatabentoClient, DBNStore
+from databento import Historical, DBNStore
 
-from api.BaseAPI import BaseAPI
-from api.Query import FinancialQuery
+from BaseAPI import BaseAPI
+from Query import FinancialQuery
 
 class DatabentoAPI(BaseAPI):
     def __init__(
@@ -16,7 +16,7 @@ class DatabentoAPI(BaseAPI):
     ):
         super().__init__(api_key=api_key, base_url=base_url, timeout=timeout, **kwargs)
         # Pass api_key directly; DatabentoClient loads DATABENTO_API_KEY from environment if None
-        self.client = DatabentoClient(api_key=api_key, base_url=base_url)
+        self.client = Historical(key=api_key)
 
     def query(self, query: FinancialQuery) -> pd.DataFrame | Any:
         """
@@ -67,6 +67,13 @@ class DatabentoAPI(BaseAPI):
 
         # Load the newly saved file into a DataFrame
         return DBNStore.from_file(cache_file).to_df()
+
+    def query_async(self, query: FinancialQuery) -> pd.DataFrame | Any:
+        """
+        Executes an asynchronous historical time-series query using Databento's SDK.
+        Note: Databento's SDK may not support async natively; this is a placeholder.
+        """
+        raise NotImplementedError("Async query is not implemented for DatabentoAPI.")
 
 if __name__ == "__main__":
     # Initialize API wrapper

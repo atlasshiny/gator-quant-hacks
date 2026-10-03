@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar, Any
-from pydantic import BaseModel
 
-from .query import FinancialQuery  # adjust import path as needed
+from Query import FinancialQuery  # adjust import path as needed
 
 class BaseAPI(ABC):
     """
