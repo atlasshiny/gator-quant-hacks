@@ -178,14 +178,14 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
             dtype=np.float32,
             shape=(n_samples, n_features),
             device=f"cuda:{rank}",
-            pin_memory=False,
+            pin_memory=True,
         )
         returns_gpu = load_memmap_tensor(
             returns_bin,
             dtype=np.float32,
             shape=(n_samples,),
             device=f"cuda:{rank}",
-            pin_memory=False,
+            pin_memory=True,
         ).contiguous()
         validator = VectorizedMiniBacktester()
         torch.cuda.synchronize(rank)
