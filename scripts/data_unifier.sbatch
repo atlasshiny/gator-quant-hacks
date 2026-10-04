@@ -6,7 +6,6 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64gb
-#SBATCH --partition=hpg-b200
 #SBATCH --time=04:00:00
 
 set -euo pipefail
