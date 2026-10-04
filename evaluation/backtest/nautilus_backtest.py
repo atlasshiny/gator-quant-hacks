@@ -46,8 +46,8 @@ from nautilus_trader.model import InstrumentId, Venue
 from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
-from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
-from split_sample import SampleSplitter, add_trading_day, trading_day_window
+from evaluation.metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
+from evaluation.split_sample import SampleSplitter, add_trading_day, trading_day_window
 
 CATALOG_DIR = os.environ.get("CATALOG_DIR", "catalog")
 INSTRUMENT_ID = os.environ.get("INSTRUMENT_ID", "ESH4.GLBX")
@@ -86,21 +86,14 @@ def make_latency_config():
     """Fixed latency applied to every order submission. None disables it."""
     if LATENCY_MS <= 0:
         return None
-    # VERIFY on your install: the venue field type is ImportableLatencyModelConfig,
-    # but the two path strings below are from memory. If the import fails, inspect
-    #   import nautilus_trader.backtest.config as c; print(dir(c))
-    from nautilus_trader.config import ImportableLatencyModelConfig
+    from nautilus_trader.execution import StaticLatencyModel
 
-    ns = int(LATENCY_MS * 1_000_000)
-    return ImportableLatencyModelConfig(
-        latency_model_path="nautilus_trader.backtest.models:LatencyModel",
-        config_path="nautilus_trader.backtest.config:LatencyModelConfig",
-        config={
-            "base_latency_nanos": ns,
-            "insert_latency_nanos": 0,
-            "update_latency_nanos": 0,
-            "delete_latency_nanos": 0,
-        },
+    ns = int(LATENCY_MS * 1_000_000)   # nanoseconds)
+    return StaticLatencyModel(
+        base_latency_nanos=ns,
+        insert_latency_nanos=0,
+        update_latency_nanos=0,
+        cancel_latency_nanos=0,
     )
 
 
