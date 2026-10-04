@@ -70,7 +70,7 @@ def evolution_kernel_grid(
         mask = sample_offsets < n_samples
         active_mask = mask & (sample_offsets >= lookback_decoded)
 
-        selected_features = 0.0
+        selected_features = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
         for feature_idx in range(28):
             feature = tl.load(
                 X_ptr + (sample_offsets * stride_sample) + feature_idx,
