@@ -79,13 +79,11 @@ def main():
     try:
         # Initialize API wrapper and execute chunked query/disk-cache load
         api = DatabentoAPI()
-        df = api.query(query)
+        result = api.query(query, collect=False)
 
         print("\n[SUCCESS] Data successfully staged to disk/RAM!")
-        print(f"Total Records  : {len(df):,}")
-        print(f"Memory Usage   : {df.memory_usage(deep=True).sum() / (1024**2):.2f} MB")
-        print("\nDataset Preview:")
-        print(df.head(3))
+        print(f"Total Records  : {result['rows']:,}")
+        print(f"Parquet Bytes  : {result['parquet_bytes']:,}")
 
     except Exception as e:
         print(f"\n[FATAL ERROR] Data ingestion failed: {e}", file=sys.stderr)
