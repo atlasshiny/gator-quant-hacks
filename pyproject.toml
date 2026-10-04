@@ -15,6 +15,7 @@ dependencies = [
     "triton>=3.0.0",
     "xgboost",
     "scikit-learn",
+    "shap",
     "nautilus-trader[visualization]>=2.0.0rc5",
 ]
 
