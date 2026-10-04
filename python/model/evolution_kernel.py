@@ -5,8 +5,8 @@ import triton.language as tl
 import numpy as np
 
 # Directly import established pipeline modules
-from chromosome import StrategyChromosome
-from data_memmap import load_memmap_tensor
+from .chromosome import StrategyChromosome
+from .data_memmap import load_memmap_tensor
 
 C_SCHEMA = StrategyChromosome.CONSTANTS
 

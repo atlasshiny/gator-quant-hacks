@@ -10,8 +10,12 @@ import numpy as np
 from python.config import load_config
 
 # Import the optimized evaluation pipeline and chromosome schema
-from evolution_kernel import (_count_rows_from_binary, evaluate_population, load_memmap_tensor)
-from chromosome import StrategyChromosome
+from .evolution_kernel import (
+    _count_rows_from_binary,
+    evaluate_population,
+    load_memmap_tensor,
+)
+from .chromosome import StrategyChromosome
 
 # DISTRIBUTED ENVIRONMENT INITIALIZATION
 def setup(rank, world_size):

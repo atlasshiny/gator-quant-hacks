@@ -1,12 +1,8 @@
 import argparse
 import sys
-from pathlib import Path
 
-# Ensure repository root is on Python path if running from subdirectories
-sys.path.append(str(Path(__file__).resolve().parent))
-
-from api.DatabentoAPI import DatabentoAPI
-from api.Query import FinancialQuery
+from python.api.DatabentoAPI import DatabentoAPI
+from python.api.Query import FinancialQuery
 from python.config import load_config
 
 def main():

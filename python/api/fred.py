@@ -105,7 +105,7 @@ class FredAPI(BaseAPI):
         return df
 
 if __name__ == "__main__":
-    from api.Query import FinancialQuery
+    from python.api.Query import FinancialQuery
 
     query = FinancialQuery(
         dataset="FRED",
