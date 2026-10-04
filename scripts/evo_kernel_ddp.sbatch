@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=16             # Allocate enough CPU cores for fast memmap loading
 #SBATCH --mem=64gb                     # System RAM
 #SBATCH --partition=hpg-b200           # Target the DGX B200 partition
-#SBATCH --gpus=b200:5                  # Request exactly 5 GPUs
+#SBATCH --gpus=b200:2                  # Request exactly 2 GPUs
 #SBATCH --time=01:00:00                # Wall clock time limit (HH:MM:SS)
 
 # Load the necessary environment modules
@@ -22,4 +22,4 @@ export NCCL_IB_DISABLE=0
 export NCCL_SOCKET_IFNAME='=bond0'
 # Execute the driver script
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
-uv run python python/models/genetic_xgboost/device/distributed_ga.py
+uv run python python/models/genetic_xgboost/distributed_ga.py
