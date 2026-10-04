@@ -22,6 +22,9 @@ source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 test -s data/unified_mbp10.bin
 
 uv run python python/prepare_xgb_features.py
+
+echo "Feature preparation completed successfully."
+
 uv run python python/model/train_xgb.py
 
 test -s data/stationary_features.parquet
