@@ -14,13 +14,41 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------
 # Parameter Handling
-# Default values are used if positional arguments are not provided.
+# Symbol, dates, dataset, and schema default to config.yaml when omitted.
 # ---------------------------------------------------------------------
-SYMBOL="${1:-ES.c.0}"
-START_DATE="${2:-2024-01-08T00:00:00Z}"
-END_DATE="${3:-2024-01-12T23:59:59Z}"
-DATASET="${4:-GLBX.MDP3}"
-SCHEMA="${5:-mbp-10}"
+SYMBOL="${1:-}"
+START_DATE="${2:-}"
+END_DATE="${3:-}"
+DATASET="${4:-}"
+SCHEMA="${5:-}"
+
+# Change to the repository root directory
+cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
+
+# Load Conda / Modules if required on HiPerGator
+module load conda
+
+# Activate your virtual environment
+source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
+
+# Resolve omitted arguments from the validated application configuration.
+CONFIG_VALUES="$(uv run python -c '
+from python.config import load_config
+
+c = load_config()
+print(c.data.symbol)
+print(c.data.start)
+print(c.data.end)
+print(c.data.dataset)
+print(c.data.schema_name)
+')"
+mapfile -t CONFIG_VALUES <<< "$CONFIG_VALUES"
+
+SYMBOL="${SYMBOL:-${CONFIG_VALUES[0]}}"
+START_DATE="${START_DATE:-${CONFIG_VALUES[1]}}"
+END_DATE="${END_DATE:-${CONFIG_VALUES[2]}}"
+DATASET="${DATASET:-${CONFIG_VALUES[3]}}"
+SCHEMA="${SCHEMA:-${CONFIG_VALUES[4]}}"
 
 echo "=================================================="
 echo "          HiPerGator Slurm Data Ingestion         "
@@ -31,15 +59,6 @@ echo "Start Date : $START_DATE"
 echo "End Date : $END_DATE"
 echo "Dataset : $DATASET"
 echo "Schema : $SCHEMA"
-
-# Change to the repository root directory
-cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-
-# Load Conda / Modules if required on HiPerGator
-module load conda
-
-# Activate your virtual environment
-source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 
 # Ensure logs directory exists
 mkdir -p logs
