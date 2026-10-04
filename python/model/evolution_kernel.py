@@ -37,6 +37,7 @@ def evolution_kernel_grid(
     SHIFT_LOOK: tl.constexpr, MASK_LOOK: tl.constexpr,
     SHIFT_THRESH: tl.constexpr, MASK_THRESH: tl.constexpr,
     SHIFT_RISK: tl.constexpr, MASK_RISK: tl.constexpr,
+    FRICTION_BPS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr, # Now dynamically provided by the autotuner
 ):
     pop_idx = tl.program_id(axis=0)
@@ -116,7 +117,7 @@ def evolution_kernel_grid(
             0.0,
         )
         turnover = tl.abs(signal - previous_signal)
-        net_pnl = (signal * ret) - (turnover * BacktestConfig.FRICTION_BPS)
+        net_pnl = (signal * ret) - (turnover * FRICTION_BPS)
 
         sum_pnl += tl.sum(net_pnl, axis=0)
         sum_pnl_2 += tl.sum(net_pnl * net_pnl, axis=0)
@@ -213,6 +214,7 @@ def evaluate_population(
         MASK_THRESH=C_SCHEMA["thresholds"]["mask"],
         SHIFT_RISK=C_SCHEMA["risk_rules"]["shift"],
         MASK_RISK=C_SCHEMA["risk_rules"]["mask"],
+        FRICTION_BPS=BacktestConfig.FRICTION_BPS,
     )
 
     return fitness_gpu
