@@ -29,9 +29,11 @@ uv run python python/model/train_xgb.py
 
 test -s data/stationary_features.parquet
 test -s data/ga_inputs/features.bin
+test -s data/ga_inputs/returns.bin
 test -s data/ga_inputs/xgboost_final.json
 
 echo "Feature engineering and XGBoost training completed successfully."
 echo "Stationary features: data/stationary_features.parquet"
 echo "GA features: data/ga_inputs/features.bin"
+echo "GA returns: data/ga_inputs/returns.bin"
 echo "XGBoost model: data/ga_inputs/xgboost_final.json"
