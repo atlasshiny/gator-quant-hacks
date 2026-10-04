@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import time
 from pathlib import Path
 import torch
 import torch.distributed as dist
@@ -9,7 +10,7 @@ import numpy as np
 from python.config import load_config
 
 # Import the optimized evaluation pipeline and chromosome schema
-from evolution_kernel import evaluate_population
+from evolution_kernel import (_count_rows_from_binary, evaluate_population, load_memmap_tensor)
 from chromosome import StrategyChromosome
 
 # DISTRIBUTED ENVIRONMENT INITIALIZATION
@@ -37,8 +38,8 @@ def crossover_and_mutate(
     n_offspring = n_pop - n_elite
 
     # Keep the absolute best performers untouched so we never lose good traits
-    sorted_indices = torch.argsort(fitness, descending=True).cpu().numpy()
-    elites = population[sorted_indices[:n_elite]]
+    elite_indices = torch.topk(fitness, k=n_elite, largest=True).indices.cpu().numpy()
+    elites = population[elite_indices]
 
     # Randomly select parents from the elite pool to breed the next generation.
     # (In a more advanced setup, you could use Tournament Selection here)
@@ -106,13 +107,40 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
         output_dir = Path(os.environ["GA_OUTPUT_DIR"])
         history: list[dict[str, float | int]] = []
         global_best: dict[str, float | int] | None = None
+        n_features = 28
+        n_samples = _count_rows_from_binary(data_bin, n_features)
+        data_gpu = load_memmap_tensor(
+            data_bin,
+            dtype=np.float32,
+            shape=(n_samples, n_features),
+            device=f"cuda:{rank}",
+        )
+        returns_gpu = load_memmap_tensor(
+            returns_bin,
+            dtype=np.float32,
+            shape=(n_samples,),
+            device=f"cuda:{rank}",
+        ).contiguous()
+        torch.cuda.synchronize(rank)
+        if rank == 0:
+            print(
+                f"[GA] Loaded {n_samples:,} samples x {n_features} features "
+                "onto each GPU.",
+                flush=True,
+            )
 
         for gen in range(generations):
+            eval_start = time.perf_counter()
             fitness = evaluate_population(
                 data_bin_path=data_bin,
                 population_bitmasks=local_population,
-                returns_bin_path=returns_bin
+                n_features=n_features,
+                data_gpu=data_gpu,
+                returns_gpu=returns_gpu,
+                n_samples=n_samples,
             )
+            torch.cuda.synchronize(rank)
+            eval_seconds = time.perf_counter() - eval_start
 
             best_idx = torch.argmax(fitness)
             local_best_score = fitness[best_idx].detach()
@@ -142,13 +170,24 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                     [gathered_bits[best_rank].item()], dtype=np.int64
                 ).view(np.uint64)[0]
                 history.append({"generation": gen, "fitness": best_score})
-                global_best = {
-                    "generation": gen,
-                    "fitness": best_score,
-                    "chromosome": int(best_bits),
-                }
-                if gen % 10 == 0:
-                    print(f"[Generation {gen}] Best Deflated Sharpe on Cluster: {best_score:.3f}")
+                if global_best is None or best_score > float(global_best["fitness"]):
+                    global_best = {
+                        "generation": gen,
+                        "fitness": best_score,
+                        "chromosome": int(best_bits),
+                    }
+                    print(
+                        f"[GA] New all-time best at generation {gen}: "
+                        f"{best_score:.3f}",
+                        flush=True,
+                    )
+                print(
+                    f"[Generation {gen:03d}] best={best_score:.3f} "
+                    f"eval={eval_seconds:.2f}s "
+                    f"throughput={local_pop_size * n_samples / eval_seconds:,.0f} "
+                    "strategy-samples/s",
+                    flush=True,
+                )
 
             local_elite_host = local_population[best_idx.item():best_idx.item() + 1].copy()
             local_population = crossover_and_mutate(local_population, fitness)
@@ -168,7 +207,7 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                 dist.all_gather(gathered_elites, local_elite)
 
                 if rank == 0:
-                    print(f"--- Generation {gen} Migration ---")
+                    print(f"--- Generation {gen} Migration ---", flush=True)
 
                 for i, elite_tensor in enumerate(gathered_elites):
                     received_bits = np.array(
