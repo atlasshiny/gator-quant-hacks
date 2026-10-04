@@ -58,6 +58,7 @@ class GeneticAlgorithmConfig(BaseModel):
 
     features_path: Path
     returns_path: Path
+    output_dir: Path
     population: int = Field(gt=0)
     generations: int = Field(gt=0)
     migration_frequency: int = Field(gt=0)

@@ -36,6 +36,7 @@ xgboost:
 genetic_algorithm:
   features_path: data/ga_inputs/features.bin
   returns_path: data/ga_inputs/returns.bin
+  output_dir: data/ga_outputs
   population: 20000
   generations: 100
   migration_frequency: 25
