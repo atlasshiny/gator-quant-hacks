@@ -22,4 +22,4 @@ export NCCL_IB_DISABLE=0
 export NCCL_SOCKET_IFNAME='=bond0'
 # Execute the driver script
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
-uv run python python/models/genetic_xgboost/distributed_ga.py
+uv run python python/model/distributed_ga.py
