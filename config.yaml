@@ -43,6 +43,6 @@ genetic_algorithm:
   returns_path: output/ga_inputs_january/returns.bin
   output_dir: output/ga_results_january
   population: 1000
-  generations: 400
+  generations: 100
   migration_frequency: 50
   chromosome_features: 28
