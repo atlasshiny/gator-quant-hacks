@@ -13,13 +13,14 @@ data:
   unified_bin: data/unified_mbp10.bin
 
 features:
-  stationary_parquet: data/stationary_features.parquet
+  stationary_parquet: output/features/stationary_features.parquet
   expected_base_features: 27
   total_kernel_features: 28
 
 xgboost:
-  features_path: data/stationary_features.parquet
-  output_dir: data/ga_inputs
+  features_path: output/features/stationary_features.parquet
+  output_dir: output/ga_inputs
+  model_path: output/models/xgboost_final.json
   target_horizon_events: 100
   fee_threshold_bps: 1.5
   folds: 5
@@ -34,9 +35,9 @@ xgboost:
   colsample_bytree: 0.8
 
 genetic_algorithm:
-  features_path: data/ga_inputs/features.bin
-  returns_path: data/ga_inputs/returns.bin
-  output_dir: data/ga_outputs
+  features_path: output/ga_inputs/features.bin
+  returns_path: output/ga_inputs/returns.bin
+  output_dir: output/ga_results
   population: 20000
   generations: 100
   migration_frequency: 25

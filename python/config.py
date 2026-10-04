@@ -40,6 +40,7 @@ class XGBoostConfig(BaseModel):
 
     features_path: Path
     output_dir: Path
+    model_path: Path
     target_horizon_events: int = Field(gt=0)
     fee_threshold_bps: float = Field(ge=0)
     folds: int = Field(ge=2)
