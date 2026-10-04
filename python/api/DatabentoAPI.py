@@ -1,8 +1,10 @@
 from typing import Any
 import os
+import gc
 import pandas as pd
 import databento as db
 from databento import DBNStore
+import pyarrow.parquet as pq
 
 from .BaseAPI import BaseAPI
 from .Query import FinancialQuery
@@ -19,10 +21,16 @@ class DatabentoAPI(BaseAPI):
         # Pass key directly; Historical picks up DATABENTO_API_KEY from environment if key is None
         self.client = db.Historical(key=api_key)
 
-    def query(self, query: FinancialQuery) -> pd.DataFrame | Any:
+    def query(
+        self,
+        query: FinancialQuery,
+        *,
+        collect: bool = True,
+    ) -> pd.DataFrame | dict[str, int]:
         """
         Executes a historical time-series query with daily chunking and automatic
-        Parquet caching to disk for ultra-fast GPU/cuDF loading.
+        Parquet caching to disk. Set collect=False to avoid retaining all daily
+        chunks in memory; this is the preferred mode for long downloads.
         """
         extra = getattr(query, "extra_params", {}) or {}
 
@@ -56,7 +64,9 @@ class DatabentoAPI(BaseAPI):
         os.makedirs(dataset_dir, exist_ok=True)
 
         symbol_str = "_".join(symbols)
-        dfs = []
+        dfs: list[pd.DataFrame] = []
+        total_rows = 0
+        total_bytes = 0
 
         for i in range(len(date_range) - 1):
             chunk_start = date_range[i].isoformat()
@@ -70,8 +80,13 @@ class DatabentoAPI(BaseAPI):
 
             # Load directly from cached .parquet
             if os.path.exists(parquet_cache_file):
-                print(f"[CACHE HIT - PARQUET] Loading: {parquet_cache_file}")
-                dfs.append(pd.read_parquet(parquet_cache_file))
+                print(f"[CACHE HIT - PARQUET] {parquet_cache_file}")
+                parquet_file = pq.ParquetFile(parquet_cache_file)
+                total_rows += parquet_file.metadata.num_rows
+                total_bytes += os.path.getsize(parquet_cache_file)
+                if collect:
+                    dfs.append(pd.read_parquet(parquet_cache_file))
+                continue
             
             # Download .dbn.zst -> Convert to .parquet
             else:
@@ -93,13 +108,21 @@ class DatabentoAPI(BaseAPI):
                 
                 # Save to disk using Snappy compression (optimal for cuDF GPU loads)
                 chunk_df.to_parquet(parquet_cache_file, engine="pyarrow", compression="snappy")
-                dfs.append(chunk_df)
+                total_rows += len(chunk_df)
+                total_bytes += os.path.getsize(parquet_cache_file)
+                if collect:
+                    dfs.append(chunk_df)
+                else:
+                    del chunk_df
+                    gc.collect()
 
                 # Optional: Remove .dbn.zst to preserve disk space once converted
                 # if os.path.exists(dbn_cache_file):
                 #     os.remove(dbn_cache_file)
 
-        # Concatenate daily chunks
+        if not collect:
+            return {"rows": total_rows, "parquet_bytes": total_bytes}
+
         full_df = pd.concat(dfs, axis=0)
         return full_df.sort_index() if isinstance(full_df.index, pd.DatetimeIndex) else full_df
 
