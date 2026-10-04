@@ -2,7 +2,7 @@
 sample_split.py
 
 In-sample (IS) / out-of-sample (OOS) splitting and evaluation for Databento
-time-series data (GLBX.MDP3 mbp-10).
+time-series data (e.g. GLBX.MDP3 mbp-10).
 
 Design rules that matter for market data:
   * Splits are strictly chronological (never shuffled).
@@ -46,7 +46,25 @@ def add_trading_day(df: pd.DataFrame, ts_col: str | None = None) -> pd.Series:
     return pd.Series(days, index=df.index, name="trading_day")
 
 
-# split container
+def trading_day_window(
+    days, start_offset: str | pd.Timedelta = "0s"
+) -> tuple[str, str]:
+    """
+    UTC [start, end) ISO timestamps covering the given CME trading days.
+    Trading day D runs from 17:00 CT on the previous calendar day to 17:00 CT on D.
+    `start_offset` pushes the start later (use it as an embargo for OOS windows).
+    Used to feed date windows to engines that read data directly (e.g. Nautilus).
+    """
+    first = pd.Timestamp(min(days)).normalize()
+    last = pd.Timestamp(max(days)).normalize()
+    roll = pd.Timedelta(hours=SESSION_ROLL_HOUR)
+    start = (first - pd.Timedelta(days=1) + roll).tz_localize(SESSION_TZ)
+    end = (last + roll).tz_localize(SESSION_TZ)
+    start = start + pd.Timedelta(start_offset)
+    return start.tz_convert("UTC").isoformat(), end.tz_convert("UTC").isoformat()
+
+
+# Split container
 @dataclass
 class Split:
     train: pd.DataFrame
@@ -116,6 +134,17 @@ class SampleSplitter:
         n_oos = max(1, int(round(len(days) * self.oos_fraction)))
         n_oos = min(n_oos, len(days) - 1)
         return self._slice(df, ts, day, days[:-n_oos], days[-n_oos:])
+
+    def split_day_list(self, days) -> tuple[list[pd.Timestamp], list[pd.Timestamp]]:
+        """
+        Same chronological IS/OOS day split as `split`, but on a plain list of
+        trading days (no DataFrame needed). Returns (train_days, test_days).
+        """
+        days = sorted(pd.Timestamp(d).normalize() for d in days)
+        if len(days) < 2:
+            raise ValueError(f"Need >= 2 trading days to split, found {len(days)}.")
+        n_oos = min(max(1, int(round(len(days) * self.oos_fraction))), len(days) - 1)
+        return days[:-n_oos], days[-n_oos:]
 
     def split_at(self, df: pd.DataFrame, oos_start: str | pd.Timestamp) -> Split:
         """Split so OOS begins on the trading day containing/after `oos_start`."""
@@ -236,8 +265,8 @@ def evaluate_walk_forward(
 # Example usage
 if __name__ == "__main__":
     from local_data import load_local, TOP_OF_BOOK
- 
-    # Reads .dbn.zst files from $DATA_DIR (HiPerGator). 
+
+    # Reads .dbn.zst files from $DATA_DIR (HiPerGator). No API calls.
     df = load_local(
         start="2024-01-08T00:00:00Z",
         end="2024-01-13T00:00:00Z",   # end is exclusive
