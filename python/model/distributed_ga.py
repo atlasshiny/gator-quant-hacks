@@ -16,6 +16,7 @@ from .evolution_kernel import (
     load_memmap_tensor,
 )
 from .chromosome import StrategyChromosome
+from .mini_backtest import VectorizedMiniBacktester
 
 # DISTRIBUTED ENVIRONMENT INITIALIZATION
 def setup(rank, world_size):
@@ -80,6 +81,48 @@ def crossover_and_mutate(
     # Combine untouched elites with the newly bred offspring
     return np.concatenate([elites, offspring])
 
+
+def _signals_for_chromosome(
+    chromosome: int,
+    data_gpu: torch.Tensor,
+) -> torch.Tensor:
+    """Recreate one kernel strategy's signal path for exact friction validation."""
+    decoded = StrategyChromosome.decode(chromosome)
+    feature_flags = decoded["feature_flags"]
+    feature_mask = torch.tensor(
+        feature_flags,
+        dtype=torch.bool,
+        device=data_gpu.device,
+    )
+    selected_features = data_gpu[:, : len(feature_flags)][:, feature_mask].sum(dim=1)
+    sample_index = torch.arange(data_gpu.shape[0], device=data_gpu.device)
+    active = sample_index >= decoded["lookback_window"]
+    long_condition = selected_features > (decoded["threshold_param"] / 1000.0)
+    signal_size = decoded["risk_param"] / 1000.0
+    return torch.where(
+        active & long_condition & (feature_mask.any()),
+        torch.full_like(selected_features, max(signal_size, 1.0)),
+        torch.zeros_like(selected_features),
+    )
+
+
+def _top_chromosomes(
+    population: np.ndarray,
+    fitness: torch.Tensor,
+    count: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return fixed-size top chromosome tensors for distributed gathering."""
+    local_count = min(count, len(population))
+    indices = torch.topk(fitness, k=local_count, largest=True).indices
+    scores = fitness[indices].detach()
+    bits = torch.as_tensor(
+        population[indices.cpu().numpy()].view(np.int64),
+        dtype=torch.int64,
+        device=fitness.device,
+    )
+    return bits, scores
+
+
 # ISLAND MODEL EXECUTION LOOP (PER GPU)
 def run_island_node(rank, world_size, data_bin, returns_bin, total_population_size, generations, migration_freq):
     setup(rank, world_size)
@@ -111,6 +154,8 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
         output_dir = Path(os.environ["GA_OUTPUT_DIR"])
         history: list[dict[str, float | int]] = []
         global_best: dict[str, float | int] | None = None
+        stage1_survivors: list[dict[str, object]] | None = None
+        survivor_count = min(25, total_population_size)
         n_features = 28
         n_samples = _count_rows_from_binary(data_bin, n_features)
         data_gpu = load_memmap_tensor(
@@ -125,6 +170,7 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
             shape=(n_samples,),
             device=f"cuda:{rank}",
         ).contiguous()
+        validator = VectorizedMiniBacktester()
         torch.cuda.synchronize(rank)
         if rank == 0:
             print(
@@ -193,6 +239,48 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                     flush=True,
                 )
 
+            if gen == generations - 1:
+                local_survivor_bits, local_survivor_scores = _top_chromosomes(
+                    local_population,
+                    fitness,
+                    survivor_count,
+                )
+                gathered_survivor_bits = [
+                    torch.empty_like(local_survivor_bits)
+                    for _ in range(world_size)
+                ]
+                gathered_survivor_scores = [
+                    torch.empty_like(local_survivor_scores)
+                    for _ in range(world_size)
+                ]
+                dist.all_gather(gathered_survivor_bits, local_survivor_bits)
+                dist.all_gather(gathered_survivor_scores, local_survivor_scores)
+
+                if rank == 0:
+                    candidates: list[tuple[float, int]] = []
+                    for rank_bits, rank_scores in zip(
+                        gathered_survivor_bits,
+                        gathered_survivor_scores,
+                    ):
+                        for bit_tensor, score_tensor in zip(rank_bits, rank_scores):
+                            chromosome = int(
+                                np.array([bit_tensor.item()], dtype=np.int64)
+                                .view(np.uint64)[0]
+                            )
+                            candidates.append((score_tensor.item(), chromosome))
+                    candidates.sort(key=lambda item: item[0], reverse=True)
+                    stage1_survivors = [
+                        {
+                            "rank": index + 1,
+                            "fitness": score,
+                            "chromosome": chromosome,
+                            "strategy": StrategyChromosome.decode(chromosome),
+                        }
+                        for index, (score, chromosome) in enumerate(
+                            candidates[:survivor_count]
+                        )
+                    ]
+
             local_elite_host = local_population[best_idx.item():best_idx.item() + 1].copy()
             local_population = crossover_and_mutate(local_population, fitness)
 
@@ -222,18 +310,48 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
         if rank == 0 and global_best is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
             best_strategy = StrategyChromosome.decode(global_best["chromosome"])
+            best_signals = _signals_for_chromosome(
+                int(global_best["chromosome"]),
+                data_gpu,
+            )
+            exact_fitness = validator.evaluate_signals(
+                best_signals.unsqueeze(0),
+                returns_gpu,
+            )[0].item()
+            print(
+                f"[GA] Exact friction-adjusted fitness: {exact_fitness:.3f}",
+                flush=True,
+            )
             result = {
                 **global_best,
+                "exact_fitness": exact_fitness,
                 "world_size": world_size,
                 "population": total_population_size,
                 "generations": generations,
                 "migration_frequency": migration_freq,
-                "features_path": data_bin,
-                "returns_path": returns_bin,
+                "features_path": str(Path(data_bin)),
+                "returns_path": str(Path(returns_bin)),
                 "strategy": best_strategy,
             }
             with (output_dir / "best_strategy.json").open("w", encoding="utf-8") as file:
                 json.dump(result, file, indent=2)
+            with (output_dir / "stage1_survivors.json").open(
+                "w", encoding="utf-8"
+            ) as file:
+                json.dump(
+                    {
+                        "stage": 1,
+                        "description": "Top chromosomes from the final GA generation.",
+                        "generation": generations - 1,
+                        "count": len(stage1_survivors or []),
+                        "population": total_population_size,
+                        "features_path": str(Path(data_bin)),
+                        "returns_path": str(Path(returns_bin)),
+                        "survivors": stage1_survivors or [],
+                    },
+                    file,
+                    indent=2,
+                )
             with (output_dir / "fitness_history.csv").open(
                 "w", newline="", encoding="utf-8"
             ) as file:
@@ -241,6 +359,7 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                 writer.writeheader()
                 writer.writerows(history)
             print(f"Saved best strategy: {output_dir / 'best_strategy.json'}")
+            print(f"Saved Stage 1 survivors: {output_dir / 'stage1_survivors.json'}")
             print(f"Saved fitness history: {output_dir / 'fitness_history.csv'}")
     finally:
         cleanup()
