@@ -1,7 +1,7 @@
 [project]
 name = "gator-quant-hacks"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "databento",
     "pandas",
@@ -13,6 +13,7 @@ dependencies = [
     "torch>=2.4.0",
     "triton>=3.0.0",
     "xgboost",
+    "nautilus-trader[visualization]>=2.0.0rc5",
 ]
 
 [[tool.uv.index]]

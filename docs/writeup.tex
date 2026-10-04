@@ -1,0 +1,401 @@
+\documentclass[11pt,letterpaper]{article}
+ 
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\usepackage{siunitx}
+ 
+\definecolor{gatorblue}{HTML}{0021A5}
+\definecolor{gatororange}{HTML}{FA4616}
+ 
+\titleformat{\section}{\large\bfseries\color{gatorblue}}{\thesection}{0.6em}{}[\color{gatororange}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\setlist{itemsep=2pt, topsep=4pt}
+ 
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Gator Quant Hacks -- Systematic Trading Track}
+\rhead{\small \TeamName}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+ 
+% ---------- Metadata (edit these) ----------
+\newcommand{\NoteTitle}{Your Strategy Title Here}
+\newcommand{\Authors}{Manny Osorio, Benjamin Friedman, Emily Diaz-Silva}
+\newcommand{\NoteDate}{\today}
+ 
+\begin{document}
+ 
+% ---------- Title block ----------
+\begin{center}
+    {\LARGE\bfseries\color{gatorblue} \NoteTitle}\\[6pt]
+    {\large Quant Note -- Systematic Trading Track}\\[4pt]
+    \Authors
+\end{center}
+\vspace{4pt}
+\hrule
+\vspace{8pt}
+ 
+% ============================================================
+\section{Summary}
+% ============================================================
+% 3--5 sentences: what the strategy does, the core edge, headline results, key caveat.
+\textbf{Strategy in one line:} \dots
+ 
+\textbf{Headline results (out-of-sample):}
+\begin{itemize}
+    \item Annualized return: \dots\% \quad Annualized volatility: \dots\%
+    \item Sharpe ratio: \dots \quad Max drawdown: \dots\%
+    \item Average turnover: \dots\% per month \quad Est. capacity: \$\dots M
+\end{itemize}
+ 
+\textbf{Key takeaway:} \dots
+ 
+% ============================================================
+\section{Economic and Data Hypothesis}
+% ============================================================
+\subsection{Literature and Inspiration}
+Our strategy builds on three strands of research. First, XGBoost 
+
+\textbf{[topic of your
+economic mechanism, e.g., short-term reversal]}: \cite{key1} document that
+\dots, and \cite{key2} attribute this to \dots. We adopt this as our
+economic prior. Second, \textbf{[data or feature source]}: \cite{key3} show that
+\dots, motivating our use of \dots. Third, \textbf{[method]}: evolutionary
+search has been applied to trading rule discovery by \cite{allen1999}, and
+formulaic alphas are widely used in practice \cite{kakushadze2016}. Our
+contribution is to \textbf{[what is different or new, e.g., apply GP under
+a restricted, economically motivated primitive set with explicit
+multiple-testing controls]}.
+
+\subsection{Economic Rationale}
+
+% Why should this signal earn a premium? Risk compensation, behavioral bias,
+% structural/institutional friction, or information advantage?
+
+\dots
+ 
+\subsection{Data Hypothesis}
+% What does the dataset tell us that the market may not fully price?
+% State a falsifiable hypothesis.
+\textbf{H$_0$:} \dots \\
+\textbf{H$_1$:} \dots
+ 
+\subsection{Why the Edge Should Persist}
+% Limits to arbitrage, capacity constraints, crowding, etc.
+\dots
+ 
+% ============================================================
+\section{Data and Universe}
+% ============================================================
+% cite this https://arxiv.org/pdf/1603.02754
+We trade a single instrument: the CME E-mini S\&P~500 future (ES), using
+Databento's continuous front-month symbol \texttt{ES.c.0}, which maps to
+the March 2024 contract (ESH4) throughout the sample; no contract roll
+occurs in-sample and prices are not back-adjusted.
+
+Market data is obtained from Databento~\cite{databento} (dataset \texttt{GLBX.MDP3}, schema \texttt{mbp-10}), which provides every order-book event with the top ten price levels on each side at nanosecond resolution. The sample covers [Monday 2024-01-08 through Friday 2024-01-12, INSERT ANOTHER DATE], [N COUNT EVENTS] book events.
+
+We use the [\texttt{ts\_recv} / \texttt{ts\_event}] timestamp for all features. Survivorship bias and corporate actions do not apply to a single futures contract. Snapshots with a crossed or locked book are dropped, empty
+levels are filled with zero size, and no feature or label spans the daily
+17:00--18:00 ET maintenance break.
+% \subsection{Data Sources}
+% % \begin{table}[H]
+% % \centering
+% % \caption{Data sources}
+% % \begin{tabular}{llll}
+% % \toprule
+% % Dataset & Provider & Frequency & Date Range \\
+% % \midrule
+% % Prices/returns & \dots & Daily & \dots \\
+% % Signal data    & \dots & \dots & \dots \\
+% % \bottomrule
+% % \end{tabular}
+% % \end{table}
+ 
+\subsection{Universe Construction}
+% Asset class, filters (price, ADV, market cap), rebalancing of membership,
+% survivorship-bias handling.
+\dots
+ 
+\subsection{Data Cleaning and Point-in-Time Integrity}
+% Missing data, outliers/winsorization, corporate actions, reporting lags,
+% how look-ahead bias was avoided.
+\dots
+ 
+% ============================================================
+\section{Methodology}
+% ============================================================
+\subsection{Signal Construction}
+% Define the signal mathematically.
+For asset $i$ at time $t$, the raw signal is
+\begin{equation}
+    s_{i,t} = f\left(x_{i,t}, x_{i,t-1}, \dots\right).
+\end{equation}
+\dots
+
+\subsection{System Architecture and Training}
+% Define Genetic Programming + XGBoost
+We deploy an XGBoost model with GPU-accelerated histogram tree construction on each of $G$ GPUs. Each GPU is allocated a 64-bit feature genome, i.e.\ a fixed budget of 64 binary slots, and a genetic algorithm (GA) evolves which features from a predefined candidate library occupy those slots. The GA searches over the \emph{feature subsets} rather than evolving formulas and selects which to mutate. The candidate features themselves and their bit allocations are shown in Table~\ref{tab:genome}. The pipeline has four stages: (1)~genome encoding, (2)~fused GPU fitness evaluation, (3)~evolution, and
+(4)~XGBoost training and signal generation.
+
+% change table once features are decided
+\begin{table}[t]
+\centering
+\caption{Candidate features and genome bit allocation.}
+\label{tab:genome}
+\small
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Candidate features} & \textbf{Bits} \\
+\midrule
+Returns / momentum (8 features, TBD)      & 8 \\
+Volatility (8 features, TBD)              & 8 \\
+Volume / trade flow (8 features, TBD)     & 8 \\
+Order-book imbalance (8 features, TBD)    & 8 \\
+Spread / liquidity (8 features, TBD)      & 8 \\
+Mean reversion (8 features, TBD)          & 8 \\
+Time / calendar (8 features, TBD)         & 8 \\
+Macro, FRED (8 features, TBD)             & 8 \\
+\midrule
+\textbf{Total (X bits)}              & \textbf{64} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Stage 1: Genome encoding.}
+Each individual is a genome $b \in \{0,1\}^{64}$ stored as a single
+\texttt{uint64}, which indexes a mask over $F = 64$ candidate features:
+\begin{equation}
+    M_j = b_j, \qquad \mathbf{x}^{(M)}_{i,t} = \left(x_{i,t,j}\right)_{j:\,M_j = 1},
+\end{equation}
+where $x_{i,t,j}$ is feature $j$ for asset $i$ at time $t$. The genome is
+partitioned into 8 bytes, which serve as the unit of mutation and crossover.
+The search space has size $2^{64}$, so exhaustive evaluation is infeasible
+and a heuristic search is warranted.
+
+\paragraph{Stage 2: Fused GPU fitness evaluation.}
+Fitness is evaluated by a fused Triton kernel that keeps the feature tensor
+resident in GPU memory. In a single pass it computes, over the training
+window only, (a)~each feature's rolling information coefficient with the
+forward return
+$\mathrm{IC}_j = \mathrm{corr}(x_{\cdot,\cdot,j},\, r_{t \to t+h})$,
+(b)~the pairwise feature correlation matrix $C \in \mathbb{R}^{64 \times 64}$,
+and (c)~a mutual-information estimate between each feature and the target.
+Given a genome with active set $S = \{j : M_j = 1\}$, fitness is
+\begin{equation}
+    \mathcal{F}(b) \;=\; \underbrace{\frac{1}{|S|}\sum_{j \in S} \left|\mathrm{IC}_j\right|}_{\text{signal quality}}
+    \;-\; \lambda_1 \left|S\right|
+    \;-\; \lambda_2 \underbrace{\frac{1}{|S|(|S|-1)}\sum_{\substack{j,k \in S\\ j \neq k}} \left|C_{jk}\right|}_{\text{redundancy}},
+\end{equation}
+where $\lambda_1$ penalizes subset size and $\lambda_2$ penalizes mean
+pairwise correlation. Because $C$ is computed once per window, scoring a
+genome reduces to indexing into precomputed quantities, so an entire
+population can be evaluated in parallel with negligible marginal cost.
+
+\paragraph{Stage 3: Evolution.}
+Each generation applies the following operators to the population:
+\begin{itemize}
+    \item \textbf{Selection:} tournament selection of size $[k]$ on $\mathcal{F}$,
+    with elitism preserving the top $[e]$ genomes.
+    \item \textbf{Crossover:} uniform byte-wise crossover, where each of the
+    8 child bytes is inherited from one parent chosen with probability $0.5$.
+    \item \textbf{Mutation:} each byte is mutated independently with
+    probability $p_{\text{byte}}$ by XOR with a random byte, which is
+    equivalent to flipping a random subset of that byte's bits.
+    $p_{\text{byte}}$ is set so the expected per-bit flip rate lies in
+    $[1\%, 5\%]$.
+\end{itemize}
+Populations evolve independently on each GPU and exchange their best
+genomes every $[m]$ generations, following an island model. At the end of
+the search on each window, the genome with the highest fitness is selected,
+and $N_{\text{eval}} = G \cdot P \cdot T_{\text{gen}}$ (total genomes
+evaluated) is logged so the multiple-testing burden can be reported.
+
+\paragraph{Stage 4: XGBoost training and signal generation.}
+The selected feature subset is passed to a gradient-boosted tree model,
+\begin{equation}
+    \hat{y}_{i,t} = \sum_{m=1}^{M} \eta\, T_m\!\left(\mathbf{x}^{(M^\ast)}_{i,t}\right),
+\end{equation}
+trained with the XGBoost GPU histogram algorithm using shallow trees
+(\texttt{max\_depth} $\in [3,6]$), subsampling, L1/L2 regularization, and
+early stopping on a validation block. The target is [the $h$-step forward
+return / its sign]. Predictions are converted into positions after
+volatility scaling, and transaction costs of 2--5\,bps per trade are
+deducted in all reported performance metrics.
+
+\subsection{Adaptive Re-Evolution and Validation}
+To address non-stationarity, the GA is re-run on each rolling window, so the
+active feature set can change as regimes shift. Selection, fitness
+evaluation, and model fitting are performed strictly inside a purged
+walk-forward scheme: for each fold, evolution and training use data in
+$[t_0, t_1)$, and testing uses $[t_1 + e, t_2)$ with an embargo $e \ge h$
+bars. No test-period data enters fitness evaluation, hyperparameter choice,
+or genome selection. We additionally report [a static-feature XGBoost
+baseline, and a random-subset baseline with the same feature count] to
+isolate the contribution of the evolutionary search.
+
+ 
+\subsection{Portfolio Construction}
+% Ranking/z-scoring, long-short vs long-only, weighting scheme, rebalance frequency,
+% neutralization (sector, beta, size).
+\begin{equation}
+    w_{i,t} = \frac{z_{i,t}}{\sum_j |z_{j,t}|}, \qquad z_{i,t} = \frac{s_{i,t}-\mu_t}{\sigma_t}
+\end{equation}
+\dots
+ 
+\subsection{Backtest Design}
+% In-sample / out-of-sample split, walk-forward, parameter selection,
+% transaction cost assumptions, execution timing (e.g., signal at close, trade next open).
+\begin{itemize}
+    \item Training period: \dots \quad Out-of-sample period: \dots
+    \item Rebalance frequency: \dots
+    \item Transaction costs: \dots bps per side \quad Slippage model: \dots
+    \item Execution assumption: \dots
+\end{itemize}
+ 
+% ============================================================
+\section{Results}
+% ============================================================
+\subsection{Performance Summary}
+\begin{table}[H]
+\centering
+\caption{Performance statistics (net of costs)}
+\begin{tabular}{lrrr}
+\toprule
+Metric & In-Sample & Out-of-Sample & Benchmark \\
+\midrule
+Annualized return (\%)    & \dots & \dots & \dots \\
+Annualized volatility (\%) & \dots & \dots & \dots \\
+Sharpe ratio              & \dots & \dots & \dots \\
+Sortino ratio             & \dots & \dots & \dots \\
+Max drawdown (\%)         & \dots & \dots & \dots \\
+Calmar ratio              & \dots & \dots & \dots \\
+Hit rate (\%)             & \dots & \dots & \dots \\
+Turnover (\% / month)     & \dots & \dots & \dots \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+\subsection{Cumulative Performance}
+% Replace with your figure: \includegraphics[width=0.85\linewidth]{figures/equity_curve.pdf}
+\begin{figure}[H]
+\centering
+% \includegraphics[width=0.85\linewidth]{figures/equity_curve.pdf}
+\fbox{\parbox{0.8\linewidth}{\centering\vspace{3cm}Equity curve placeholder\vspace{3cm}}}
+\caption{Cumulative net returns vs.\ benchmark.}
+\end{figure}
+ 
+\subsection{Robustness and Attribution}
+% Parameter sensitivity, subperiod analysis, factor regression (alpha, betas),
+% cost sensitivity, decile/quantile spreads.
+\dots
+ 
+% ============================================================
+\section{Risk Management}
+% ============================================================
+Training an XGBoost model on MBP-10 data faces two major hurdles: overfitting to market noise and a large parameter search space [CITE THIS]. Adding Genetic Programming acts as a regularizer for the first and a search heuristic for the second [CITE THIS]. However, there still exists [BLANK]
+
+During training, the XGBoost model undergoes a backtesting engine following a fitness score tied to a financial metric [insert equation for what's inside Triton terminal].
+
+\subsection{Risk Controls}
+% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
+% sector/factor exposure limits.
+\begin{itemize}
+    \item Position limit: \dots
+    \item Volatility target: \dots
+    \item Gross / net exposure: \dots
+    \item Drawdown rule: \dots
+\end{itemize}
+
+\subsection{Risk Controls}
+% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
+% sector/factor exposure limits.
+\begin{itemize}
+    \item Position limit: \dots
+    \item Volatility target: \dots
+    \item Gross / net exposure: \dots
+    \item Drawdown rule: \dots
+\end{itemize}
+ 
+\subsection{Risk Decomposition}
+% Factor exposures (market, size, value, momentum), tail risk, VaR / CVaR,
+% performance in stress regimes (e.g., 2008, 2020, 2022).
+\dots
+ 
+% ============================================================
+\section{Liquidity and Capacity}
+% ============================================================
+\subsection{Liquidity Profile}
+% ADV participation, days-to-liquidate, bid-ask spreads of holdings.
+\dots
+ 
+\subsection{Transaction Costs and Market Impact}
+% Cost model, e.g. $\text{cost} = \text{spread}/2 + k\,\sigma\sqrt{Q/\text{ADV}}$.
+\dots
+ 
+\subsection{Capacity Estimate}
+% AUM at which Sharpe degrades materially.
+\begin{table}[H]
+\centering
+\caption{Net Sharpe ratio vs.\ assumed AUM}
+\begin{tabular}{lrrrr}
+\toprule
+AUM (\$M) & 1 & 10 & 50 & 100 \\
+\midrule
+Net Sharpe & \dots & \dots & \dots & \dots \\
+Max ADV participation (\%) & \dots & \dots & \dots & \dots \\
+\bottomrule
+\end{tabular}
+\end{table}
+ 
+% ============================================================
+\section{Limitations and Next Steps}
+% ============================================================
+\subsection{Limitations}
+\begin{itemize}
+    \item Data: \dots
+    \item Overfitting / multiple-testing risk: \dots
+    \item Regime dependence: \dots
+    \item Execution and cost assumptions: \dots
+\end{itemize}
+ 
+\subsection{Next Steps}
+\begin{itemize}
+    \item \dots
+    \item \dots
+    \item \dots
+\end{itemize}
+ 
+ 
+\clearpage
+\addcontentsline{toc}{section}{References}
+\begin{thebibliography}{99}
+\small
+
+
+\bibitem{christodoulou2025}
+C.~N. Christodoulou-Volos,
+``Optimizing Trading Strategies Using Genetic Algorithms: A Review and
+Implementation,''
+\textit{Edelweiss Applied Science and Technology}, vol.~9, no.~10,
+pp.~334--345, 2025.
+\url{https://doi.org/10.55214/2576-8484.v9i10.10407}
+
+
+\end{thebibliography}
+ 
+\end{document}
+ 
