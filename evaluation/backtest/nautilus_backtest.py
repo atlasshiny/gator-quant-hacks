@@ -1,32 +1,38 @@
 """
 nautilus_backtest.py
-
-Out-of-sample replay in NautilusTrader, run AFTER the model is trained.
-
+ 
+Out-of-sample replay in NautilusTrader, run AFTER the model and GA are frozen.
+ 
 Division of labor:
-    pandas / XGBoost / GP  -> all training and tuning, on in-sample days only
-    Nautilus (this file)   -> replay the FROZEN model on the OOS window against the
-                              recorded order book, then produce the report + graphs
-
+    pandas / XGBoost / GA  -> all training and tuning, on in-sample days only
+    Nautilus (this file)   -> replay the FROZEN strategy (nautilus_strategy.py)
+                              against the recorded order book, then report
+ 
 Nothing here fits or tunes anything. The OOS window is run once.
-
+ 
+Required before running (all produced from in-sample data only):
+    data/ga_inputs/xgboost_final.json   3-class XGBoost (0=sell, 1=hold, 2=buy)
+    data/ga_inputs/frozen_bundle.json   GA mask, tau, lookback, mean/std, names
+                                        (see nautilus_strategy.build_bundle)
+ 
 The training script must use the same day split, so call the same splitter there:
     train_days, test_days = SampleSplitter(oos_fraction, embargo).split_day_list(all_days)
-
+ 
 Outputs:
-    oos_tearsheet.html   Nautilus interactive tearsheet (equity, drawdown, returns, stats)
-    equity_curve.png     our gross-vs-net equity curve (metrics.py)
-    printed stats table  Sharpe, vol, return, drawdown, turnover, net of fees
-
+    oos_tearsheet.html     Nautilus tearsheet (GROSS of our per-fill fee)
+    equity_curve.png       our gross-vs-net equity curve (metrics.py)
+    signal_log_oos.csv     every entry: time, side, GA score S, XGBoost score
+    printed stats table    return, vol, Sharpe, drawdown, turnover, net of fees
+ 
 Install (Nautilus 2.x is a pre-release on PyPI):
     uv pip install --pre "nautilus_trader[visualization]"
 """
 
 import os
-
+ 
 import numpy as np
 import pandas as pd
-
+ 
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import (
     BacktestDataConfig,
@@ -34,38 +40,91 @@ from nautilus_trader.config import (
     BacktestRunConfig,
     BacktestVenueConfig,
 )
-
+ 
 from nautilus_trader.config import ImportableStrategyConfig, LoggerConfig
 from nautilus_trader.model import InstrumentId, Venue
 from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
-
+ 
 from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
 from split_sample import SampleSplitter, add_trading_day, trading_day_window
-
+ 
 CATALOG_DIR = os.environ.get("CATALOG_DIR", "catalog")
 INSTRUMENT_ID = os.environ.get("INSTRUMENT_ID", "ESH4.GLBX")
 VENUE_NAME = INSTRUMENT_ID.split(".")[-1]  # "GLBX"
-
-# Swap these two lines when the XGBoost/GP strategy replaces the placeholder.
-STRATEGY_PATH = "nautilus_strategy:ImbalanceStrategy"
-STRATEGY_CONFIG_PATH = "nautilus_strategy:ImbalanceConfig"
-
+ 
+# Frozen artifacts from the in-sample pipeline.
+BUNDLE_PATH = os.environ.get("BUNDLE_PATH", "data/ga_inputs/frozen_bundle.json")
+MODEL_PATH = os.environ.get("MODEL_PATH", "data/ga_inputs/xgboost_final.json")
+ 
+STRATEGY_PATH = "nautilus_strategy:XGBBookStateStrategy"
+STRATEGY_CONFIG_PATH = "nautilus_strategy:XGBBookStateConfig"
+ 
+# Assumed order-to-venue latency (ms). This is an ASSUMPTION: report results for
+# several values (e.g. 0, 5, 20, 50). Set to 0 to disable the latency model.
+LATENCY_MS = float(os.environ.get("LATENCY_MS", "5"))
+ 
 # Nautilus simulates fills against recorded depth, so spread/depth slippage is already
 # in the P&L. We only add fees afterwards, hence slippage_ticks=0.
 COSTS = CostModel(fee_per_contract=2.0, slippage_ticks=0.0, capital=1_000_000.0)
-
-
+ 
+ 
+def default_params() -> dict:
+    """Strategy settings. These must be fixed from in-sample work, not tuned on OOS."""
+    return {
+        "bundle_path": BUNDLE_PATH,
+        "model_path": MODEL_PATH,
+        "trade_size": 1,
+        "holding_ms": 1500,        # set from the in-sample duration of the label horizon
+        "min_interval_ms": 500,
+        "cooldown_ms": 500,
+    }
+ 
+ 
 # Config
+def make_latency_config():
+    """Fixed latency applied to every order submission. None disables it."""
+    if LATENCY_MS <= 0:
+        return None
+    # VERIFY on your install: the venue field type is ImportableLatencyModelConfig,
+    # but the two path strings below are from memory. If the import fails, inspect
+    #   import nautilus_trader.backtest.config as c; print(dir(c))
+    from nautilus_trader.config import ImportableLatencyModelConfig
+ 
+    ns = int(LATENCY_MS * 1_000_000)
+    return ImportableLatencyModelConfig(
+        latency_model_path="nautilus_trader.backtest.models:LatencyModel",
+        config_path="nautilus_trader.backtest.config:LatencyModelConfig",
+        config={
+            "base_latency_nanos": ns,
+            "insert_latency_nanos": 0,
+            "update_latency_nanos": 0,
+            "delete_latency_nanos": 0,
+        },
+    )
+ 
+ 
 def make_run_config(strategy_params: dict, start: str, end: str):
     iid = InstrumentId.from_str(INSTRUMENT_ID)
-
+ 
     strategy_config = ImportableStrategyConfig(
         strategy_path=STRATEGY_PATH,
         config_path=STRATEGY_CONFIG_PATH,
         config={"instrument_id": str(iid), **strategy_params},  # str(), as in the docs
     )
-
+ 
+    venue_kwargs = dict(
+        name=VENUE_NAME,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=Currency.from_str("USD"),
+        starting_balances=[f"{int(COSTS.capital)} USD"],
+        book_type=BookType.L2_MBP,  # depth10 updates an L2 book
+    )
+    latency = make_latency_config()
+    if latency is not None:
+        venue_kwargs["latency_model"] = latency
+ 
     run_config = BacktestRunConfig(
         engine=BacktestEngineConfig(
             logging=LoggerConfig(stdout_level=LogLevel.ERROR),
@@ -78,49 +137,42 @@ def make_run_config(strategy_params: dict, start: str, end: str):
                 end_time=end,
             )
         ],
-        venues=[BacktestVenueConfig(
-                name=VENUE_NAME,
-                oms_type=OmsType.NETTING,
-                account_type=AccountType.MARGIN,
-                base_currency=Currency.from_str("USD"),
-                starting_balances=[f"{int(COSTS.capital)} USD"],
-                book_type=BookType.L2_MBP,  # depth10 updates an L2 book
-            ) 
-        ],
-        dispose_on_completion=False,   # NEW: keep reports and cache alive after run()
+        venues=[BacktestVenueConfig(**venue_kwargs)],
+        dispose_on_completion=False,   # keep reports and cache alive after run()
     )
     return run_config, strategy_config
-
-
+ 
+ 
 # Engine results -> daily frame expected by metrics.py
 def _utc_index(idx) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(pd.to_datetime(idx, utc=True))
-
-
+ 
+ 
 def daily_from_nautilus(engine, trading_days, costs: CostModel = COSTS) -> pd.DataFrame:
     """
     Daily frame from the engine's account + fills reports.
-
+ 
     VERIFY on your install: print(account.columns) and print(fills.columns). Assumes
     the account report has a numeric 'total' balance column, and the fills report has
     'filled_qty', 'avg_px' and a timestamp column ('ts_last').
-
-    Balance is realized-only. The strategy closes everything at the end of the window,
-    so window totals are fully realized, but intraday drawdowns are not visible here.
-    (The Nautilus tearsheet has its own statistics.)
+ 
+    Balance is realized-only. The strategy is flat at the end of each session (it
+    flattens before the maintenance break), so daily totals are realized, but
+    intraday drawdowns are not visible here. (The Nautilus tearsheet has its own
+    statistics.)
     """
     days = pd.DatetimeIndex(sorted(pd.Timestamp(d).normalize() for d in trading_days))
-
+ 
     acct = engine.trader.generate_account_report(Venue(VENUE_NAME))
     bal = pd.DataFrame(
         {"total": pd.to_numeric(acct["total"], errors="coerce").values},
         index=_utc_index(acct.index),
     ).dropna()
-    
+ 
     bal_day = bal.groupby(add_trading_day(bal).values)["total"].last()
     bal_day = bal_day.reindex(days).ffill().fillna(costs.capital)
     gross_pnl = bal_day - bal_day.shift(1).fillna(costs.capital)
-
+ 
     fills = engine.trader.generate_order_fills_report()
     if fills is None or len(fills) == 0:
         qty = pd.Series(0.0, index=days)
@@ -138,7 +190,7 @@ def daily_from_nautilus(engine, trading_days, costs: CostModel = COSTS) -> pd.Da
         qty = f.groupby(key)["qty"].sum().reindex(days).fillna(0.0)
         px = f.groupby(key)["px"].mean().reindex(days)
     px = px.ffill().bfill()
-
+ 
     daily = pd.DataFrame(index=days)
     daily.index.name = "trading_day"
     daily["gross_pnl"] = gross_pnl.values
@@ -153,8 +205,8 @@ def daily_from_nautilus(engine, trading_days, costs: CostModel = COSTS) -> pd.Da
         daily["contracts_traded"] * daily["avg_price"].fillna(0.0) * costs.multiplier
     )
     return daily
-
-
+ 
+ 
 # Tearsheet
 def save_tearsheet(result, node, path: str, title: str, theme: str = "nautilus_dark") -> None:
     try:
@@ -170,49 +222,74 @@ def save_tearsheet(result, node, path: str, title: str, theme: str = "nautilus_d
         title=title,
         config=TearsheetConfig(theme=theme),
     )
-    print(f"Saved {path}")
-
-
+    print(f"Saved {path} (gross of our per-fill fee; use the printed net table for headline numbers)")
+ 
+ 
+# Sanity check on what the strategy actually did
+def report_trades(signal_log_path: str, label: str) -> None:
+    if not os.path.exists(signal_log_path):
+        print(f"[WARN] {label}: no signal log at {signal_log_path}; strategy may not have started.")
+        return
+    log = pd.read_csv(signal_log_path)
+    if log.empty:
+        print(f"[WARN] {label}: ZERO entries. Check warm-up, tau, and that the depth handler fires.")
+        return
+    n_long = int((log["side"] == "BUY").sum())
+    n_short = int((log["side"] == "SELL").sum())
+    print(f"{label}: {len(log):,} entries ({n_long:,} long / {n_short:,} short); "
+          f"median |S| = {log['S'].abs().median():.2f}")
+ 
+ 
 # Workflow
 def run_window(strategy_params: dict, days, label: str, start_offset: str = "0s"):
     start, end = trading_day_window(days, start_offset=start_offset)
-    cfg, strategy_cfg = make_run_config(strategy_params, start, end)
+    params = {**strategy_params, "signal_log_path": f"signal_log_{label}.csv"}
+    cfg, strategy_cfg = make_run_config(params, start, end)
     node = BacktestNode(configs=[cfg])
     node.build()
     node.add_strategy_from_config(cfg.id, strategy_cfg)
     [result] = node.run()
-    daily = daily_from_nautilus(node, cfg.id, days)
-
+ 
+    engine = node.get_engine(cfg.id)   # engine holds the account and fills reports
+    daily = daily_from_nautilus(engine, days)
+    report_trades(params["signal_log_path"], label)
+ 
     return node, result, daily
-
-
+ 
+ 
 def run_oos(
-    strategy_params: dict,
+    strategy_params: dict | None = None,
     first_day: str = "2024-01-02",
     last_day: str = "2024-01-31",
     oos_fraction: float = 0.3,
     embargo: str = "5min",
-    also_run_is: bool = False,
+    also_run_is: bool = True,
 ):
     """
     Replay the frozen strategy on the OOS window once.
-
+ 
+    first_day / last_day must be days that actually exist in the catalog.
+ 
     also_run_is=True additionally replays the IS window (a single run, no tuning) so
-    IS vs OOS are measured by the same engine. Without it, compare against the IS
-    numbers from your training pipeline, but note those come from a different
-    simulator (no depth slippage), so they are not like-for-like.
+    IS and OOS are measured by the same engine, with the same latency and fees.
+    The IS number is optimistic by construction (the model and GA saw those days);
+    it is reported only to show the IS/OOS gap.
     """
+    strategy_params = strategy_params or default_params()
     all_days = pd.bdate_range(first_day, last_day)
     train_days, test_days = SampleSplitter(oos_fraction, embargo).split_day_list(all_days)
+    print(f"IS : {train_days[0].date()} -> {train_days[-1].date()} ({len(train_days)}d)")
     print(f"OOS: {test_days[0].date()} -> {test_days[-1].date()} "
-          f"({len(test_days)}d), embargo {embargo}")
-
-    node, oos_result, oos_daily = run_window(strategy_params, test_days, "oos", start_offset=embargo)
+          f"({len(test_days)}d), embargo {embargo}, latency {LATENCY_MS} ms")
+ 
+    node, oos_result, oos_daily = run_window(
+        strategy_params, test_days, "oos", start_offset=embargo
+    )
     save_tearsheet(oos_result, node, "oos_tearsheet.html", "Out-of-sample backtest")
-
+ 
     pd.set_option("display.float_format", lambda v: f"{v:,.4f}")
     if also_run_is:
-        _, is_result, is_daily = run_window(strategy_params, train_days, "is")
+        _, _, is_daily = run_window(strategy_params, train_days, "is")
         table = compare_is_oos(is_daily, oos_daily, COSTS)
         plot_equity_curve(is_daily, oos_daily, COSTS, "equity_curve.png")
     else:
@@ -222,8 +299,8 @@ def run_oos(
     print(table)
     print("Saved equity_curve.png")
     return table, oos_daily
-
-
+ 
+ 
 if __name__ == "__main__":
-    # Placeholder strategy params; replace with your trained model's settings.
-    run_oos({"threshold": 0.8}, also_run_is=False)
+    # Settings come from default_params(); change them only from in-sample evidence.
+    run_oos(also_run_is=True)
