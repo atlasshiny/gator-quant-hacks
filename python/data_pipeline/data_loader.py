@@ -53,10 +53,39 @@ class RawDatabentoUnifier:
                 f"No Parquet files found in {self.parquet_dir}"
             )
 
-        expected_rows = sum(
-            pl.scan_parquet(str(path)).select(pl.len()).collect().item()
-            for path in parquet_files
-        )
+        file_ranges: list[tuple[Path, object, object, int]] = []
+        for path in parquet_files:
+            bounds = (
+                pl.scan_parquet(str(path))
+                .select(
+                    pl.len().alias("rows"),
+                    pl.col("ts_event").first().alias("first"),
+                    pl.col("ts_event").last().alias("last"),
+                    pl.col("ts_event").is_sorted().alias("is_sorted"),
+                )
+                .collect()
+                .row(0)
+            )
+            if bounds[0] == 0:
+                print(f"Skipping empty parquet file: {path}")
+                continue
+            if bounds[1] is None or bounds[2] is None:
+                raise ValueError(
+                    f"Parquet file has no usable ts_event bounds: {path}"
+                )
+            if not bounds[3]:
+                raise ValueError(f"Parquet file is not sorted by ts_event: {path}")
+            file_ranges.append((path, bounds[1], bounds[2], bounds[0]))
+
+        if not file_ranges:
+            raise ValueError(f"No non-empty parquet files found in {self.parquet_dir}")
+
+        # Filenames are usually chronological, but their timestamp ranges can
+        # overlap at daily boundaries. Use the data bounds as the source of
+        # truth for the global merge order and preserve every event.
+        file_ranges.sort(key=lambda item: item[1])
+        expected_rows = sum(item[3] for item in file_ranges)
+
         if self.cache_path.exists() and not force_rebuild:
             item_count, remainder = divmod(
                 self.cache_path.stat().st_size, np.dtype(np.float32).itemsize
@@ -77,53 +106,38 @@ class RawDatabentoUnifier:
 
         print(f"Scanning and unifying Parquet files in {self.parquet_dir}...")
         start_time = time.perf_counter()
-        file_ranges: list[tuple[Path, object, object]] = []
-        for path in parquet_files:
-            bounds = (
-                pl.scan_parquet(str(path))
-                .select(
-                    pl.col("ts_event").first().alias("first"),
-                    pl.col("ts_event").last().alias("last"),
-                    pl.col("ts_event").is_sorted().alias("is_sorted"),
-                )
-                .collect()
-                .row(0)
-            )
-            if not bounds[2]:
-                raise ValueError(f"Parquet file is not sorted by ts_event: {path}")
-            if file_ranges and bounds[0] < file_ranges[-1][2]:
-                raise ValueError(
-                    f"Parquet files overlap out of chronological order: "
-                    f"{file_ranges[-1][0]} and {path}"
-                )
-            file_ranges.append((path, bounds[0], bounds[1]))
-
         # Stream each file in bounded batches so the full dataset does not need
         # to fit in RAM before it can be written.
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         with self.cache_path.open("wb") as cache_file:
-            for path, _, _ in file_ranges:
-                file_plan = (
-                    pl.scan_parquet(str(path))
-                    .with_columns([
-                        pl.col("action").replace_strict(
-                            {"A": 1, "C": 2, "M": 3, "R": 4, "T": 5},
-                            return_dtype=pl.Float32,
-                            default=0,
-                        ),
-                        pl.col("side").replace_strict(
-                            {"A": 1, "B": 2, "N": 0},
-                            return_dtype=pl.Float32,
-                            default=0,
-                        ),
-                    ])
-                    .select([pl.col(c).cast(pl.Float32) for c in self.all_columns])
-                )
+            file_plan = pl.concat(
+                [pl.scan_parquet(str(path)) for path, _, _, _ in file_ranges],
+                how="vertical",
+            ).sort(
+                ["ts_event", "ts_recv", "sequence"],
+                maintain_order=True,
+            )
+            file_plan = (
+                file_plan
+                .with_columns([
+                    pl.col("action").replace_strict(
+                        {"A": 1, "C": 2, "M": 3, "R": 4, "T": 5},
+                        return_dtype=pl.Float32,
+                        default=0,
+                    ),
+                    pl.col("side").replace_strict(
+                        {"A": 1, "B": 2, "N": 0},
+                        return_dtype=pl.Float32,
+                        default=0,
+                    ),
+                ])
+                .select([pl.col(c).cast(pl.Float32) for c in self.all_columns])
+            )
 
-                def write_batch(batch: pl.DataFrame) -> None:
-                    batch.to_numpy().astype(np.float32).tofile(cache_file)
+            def write_batch(batch: pl.DataFrame) -> None:
+                batch.to_numpy().astype(np.float32).tofile(cache_file)
 
-                file_plan.sink_batches(write_batch, chunk_size=16_384)
+            file_plan.sink_batches(write_batch, chunk_size=16_384)
 
         matrix = np.memmap(self.cache_path, dtype=np.float32, mode="r")
         matrix = matrix.reshape((-1, self.num_features))
