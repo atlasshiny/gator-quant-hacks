@@ -7,6 +7,7 @@ import numpy as np
 # Directly import established pipeline modules
 from .chromosome import StrategyChromosome
 from .data_memmap import load_memmap_tensor
+from .mini_backtest import BacktestConfig, compute_deflated_sharpe_device
 
 C_SCHEMA = StrategyChromosome.CONSTANTS
 
@@ -90,42 +91,49 @@ def evolution_kernel_grid(
             tl.where(vol_target > 0.0, vol_target, 1.0),
             0.0,
         )
-        strat_ret = signal * ret
+        # Approximate turnover friction within the block. Recompute the
+        # previous lane's signal for intra-block transitions; lane zero is
+        # explicitly zero so block boundaries have no cross-block dependency.
+        previous_offsets = sample_offsets - 1
+        previous_mask = mask & (sample_offsets > start_sample)
+        previous_active = previous_mask & (previous_offsets >= lookback_decoded)
+        previous_features = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+        for feature_idx in range(28):
+            previous_feature = tl.load(
+                X_ptr + (previous_offsets * stride_sample) + feature_idx,
+                mask=previous_mask,
+                other=0.0,
+            )
+            previous_features += tl.where(
+                ((feat_flags >> feature_idx) & 1) != 0,
+                previous_feature,
+                0.0,
+            )
+        previous_long_cond = has_features & (previous_features > z_trigger)
+        previous_signal = tl.where(
+            previous_active & previous_long_cond,
+            tl.where(vol_target > 0.0, vol_target, 1.0),
+            0.0,
+        )
+        turnover = tl.abs(signal - previous_signal)
+        net_pnl = (signal * ret) - (turnover * BacktestConfig.FRICTION_BPS)
 
-        sum_pnl += tl.sum(strat_ret, axis=0)
-        sum_pnl_2 += tl.sum(strat_ret * strat_ret, axis=0)
-        sum_pnl_3 += tl.sum(strat_ret * strat_ret * strat_ret, axis=0)
-        sum_pnl_4 += tl.sum(strat_ret * strat_ret * strat_ret * strat_ret, axis=0)
+        sum_pnl += tl.sum(net_pnl, axis=0)
+        sum_pnl_2 += tl.sum(net_pnl * net_pnl, axis=0)
+        sum_pnl_3 += tl.sum(net_pnl * net_pnl * net_pnl, axis=0)
+        sum_pnl_4 += tl.sum(net_pnl * net_pnl * net_pnl * net_pnl, axis=0)
         total_count += tl.sum(tl.where(active_mask, 1.0, 0.0), axis=0)
 
-    # EXACT STATISTICAL MOMENTS & DEFLATED SHARPE CALCULATION
-    count = tl.maximum(total_count, 1.0)
-    mean = sum_pnl / count
-    variance = (sum_pnl_2 / count) - (mean * mean)
-    std_dev = tl.sqrt(tl.maximum(variance, 1e-8))
-
-    e_x2 = sum_pnl_2 / count
-    e_x3 = sum_pnl_3 / count
-    e_x4 = sum_pnl_4 / count
-
-    mu_3 = e_x3 - (3.0 * mean * e_x2) + (2.0 * mean * mean * mean)
-    skew = mu_3 / tl.maximum(std_dev * std_dev * std_dev, 1e-8)
-
-    mu_4 = (
-        e_x4
-        - (4.0 * mean * e_x3)
-        + (6.0 * mean * mean * e_x2)
-        - (3.0 * mean * mean * mean * mean)
+    final_fitness = compute_deflated_sharpe_device(
+        sum_pnl,
+        sum_pnl_2,
+        sum_pnl_3,
+        sum_pnl_4,
+        total_count,
+        ANNUALIZATION=BacktestConfig.ANNUALIZATION,
+        SKEW_PENALTY_MULT=BacktestConfig.SKEW_PENALTY_MULT,
+        KURT_PENALTY_MULT=BacktestConfig.KURT_PENALTY_MULT,
     )
-    kurtosis = mu_4 / tl.maximum(variance * variance, 1e-8)
-
-    annualized_sharpe = (mean / std_dev) * 2432.0
-
-    skew_penalty = tl.where(skew < 0.0, -skew * 0.5, 0.0)
-    kurt_penalty = tl.where(kurtosis > 3.0, (kurtosis - 3.0) * 0.1, 0.0)
-
-    computed_fitness = annualized_sharpe - skew_penalty - kurt_penalty
-    final_fitness = tl.where(total_count > 1.0, computed_fitness, 0.0)
 
     tl.store(fitness_ptr + pop_idx, final_fitness)
 
