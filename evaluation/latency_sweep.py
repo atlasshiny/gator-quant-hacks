@@ -46,7 +46,7 @@ def worker(latency_ms: float, out_json: str) -> None:
     """Runs ONE OOS replay. LATENCY_MS must be set before importing nautilus_backtest."""
     os.environ["LATENCY_MS"] = str(latency_ms)
     import backtest.nautilus_backtest as nb
-    from metrics import performance_stats
+    from evaluation.backtest.metrics import performance_stats
 
     _, oos_daily = nb.run_oos(also_run_is=False)
     stats = performance_stats(oos_daily, nb.COSTS)
