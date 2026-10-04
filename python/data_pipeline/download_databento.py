@@ -7,8 +7,10 @@ sys.path.append(str(Path(__file__).resolve().parent))
 
 from api.DatabentoAPI import DatabentoAPI
 from api.Query import FinancialQuery
+from python.config import load_config
 
 def main():
+    config = load_config()
     parser = argparse.ArgumentParser(
         description="Adaptive GPU Alpha Factory - High-Throughput Data Staging CLI",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -18,19 +20,19 @@ def main():
     parser.add_argument(
         "--symbol",
         type=str,
-        default="ES.c.0",
+        default=config.data.symbol,
         help="Ticker or continuous symbol (e.g. ES.c.0, NQ.c.0)",
     )
     parser.add_argument(
         "--start",
         type=str,
-        default="2024-01-08T00:00:00Z",
+        default=config.data.start,
         help="Start ISO timestamp (YYYY-MM-DDTHH:MM:SSZ)",
     )
     parser.add_argument(
         "--end",
         type=str,
-        default="2024-01-12T23:59:59Z",
+        default=config.data.end,
         help="End ISO timestamp (YYYY-MM-DDTHH:MM:SSZ)",
     )
     
@@ -38,19 +40,19 @@ def main():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="GLBX.MDP3",
+        default=config.data.dataset,
         help="Databento dataset identifier (e.g., GLBX.MDP3)",
     )
     parser.add_argument(
         "--schema",
         type=str,
-        default="mbp-10",
+        default=config.data.schema_name,
         help="Order book depth schema (e.g., mbp-10, trades, ohlcv-1m)",
     )
     parser.add_argument(
         "--stype_in",
         type=str,
-        default="continuous",
+        default=config.data.stype_in,
         help="Symbology type (e.g., continuous, raw_symbol, parent)",
     )
 

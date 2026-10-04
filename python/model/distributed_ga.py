@@ -3,6 +3,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import numpy as np
+from python.config import load_config
 
 # Import the optimized evaluation pipeline and chromosome schema
 from evolution_kernel import evaluate_population
@@ -149,22 +150,27 @@ if __name__ == "__main__":
     print(f"Launching distributed GA across {WORLD_SIZE} GPUs...")
     
     # Run Parameters
-    TOTAL_POPULATION = 12_000
-    GENERATIONS = 100
-    MIGRATION_FREQ = 25
-    
-    # Mock data references (ensure these files exist before running)
-    mock_data = "test_features.bin"
-    mock_returns = "test_returns.bin"
-    
-    if not os.path.exists(mock_data):
-        np.random.randn(10_000, 8).astype(np.float32).tofile(mock_data)
-        np.random.randn(10_000).astype(np.float32).tofile(mock_returns)
+    config = load_config()
+    ga_config = config.genetic_algorithm
+    TOTAL_POPULATION = ga_config.population
+    GENERATIONS = ga_config.generations
+    MIGRATION_FREQ = ga_config.migration_frequency
+
+    data_bin = str(ga_config.features_path)
+    returns_bin = str(ga_config.returns_path)
+    for path in (data_bin, returns_bin):
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise FileNotFoundError(
+                f"Production GA input is missing or empty: {path}. "
+                "Run the feature/XGBoost stage first."
+            )
+    print(f"Using production GA features: {data_bin}")
+    print(f"Using production GA returns: {returns_bin}")
 
     # Spawn a process for each GPU
     mp.spawn(
         run_island_node,
-        args=(WORLD_SIZE, mock_data, mock_returns, TOTAL_POPULATION, GENERATIONS, MIGRATION_FREQ),
+        args=(WORLD_SIZE, data_bin, returns_bin, TOTAL_POPULATION, GENERATIONS, MIGRATION_FREQ),
         nprocs=WORLD_SIZE,
         join=True
     )

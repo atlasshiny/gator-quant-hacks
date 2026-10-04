@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import xgboost as xgb
+from python.config import load_config
 
 class MicrostructureXGBTrainer:
     def __init__(
@@ -12,6 +13,9 @@ class MicrostructureXGBTrainer:
         output_bin_dir: str = "data/ga_inputs",
         target_horizon_events: int = 100, # e.g., 100 events ahead
         fee_threshold_bps: float = 1.5, # 1.5 bps fee barrier
+        xgb_params: dict[str, object] | None = None,
+        num_boost_round: int = 800,
+        early_stopping_rounds: int = 40,
     ):
         self.features_path = Path(features_path)
         self.output_bin_dir = Path(output_bin_dir)
@@ -19,6 +23,18 @@ class MicrostructureXGBTrainer:
         
         self.target_horizon = target_horizon_events
         self.fee_threshold = fee_threshold_bps / 10000.0  # Convert bps to decimal
+        self.xgb_params = xgb_params or {
+            "tree_method": "hist",
+            "device": "cuda",
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "max_depth": 6,
+            "learning_rate": 0.03,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+        }
+        self.num_boost_round = num_boost_round
+        self.early_stopping_rounds = early_stopping_rounds
 
     def load_and_label_data(
         self,
@@ -101,23 +117,12 @@ class MicrostructureXGBTrainer:
             dtrain = xgb.DMatrix(X_train, label=y_train)
             dval = xgb.DMatrix(X_val, label=y_val)
 
-            params = {
-                "tree_method": "hist",
-                "device": "cuda",             # HiPerGator GPU Acceleration
-                "objective": "binary:logistic",
-                "eval_metric": "auc",
-                "max_depth": 6,               # Moderate depth to prevent overfitting noise
-                "learning_rate": 0.03,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-            }
-
             model = xgb.train(
-                params,
+                self.xgb_params,
                 dtrain,
-                num_boost_round=800,
+                num_boost_round=self.num_boost_round,
                 evals=[(dval, "val")],
-                early_stopping_rounds=40,
+                early_stopping_rounds=self.early_stopping_rounds,
                 verbose_eval=200,
             )
 
@@ -155,32 +160,41 @@ class MicrostructureXGBTrainer:
         print(f"Saved GA return series -> {self.output_bin_dir / 'returns.bin'}")
 
 if __name__ == "__main__":
-    # Example execution pipeline
+    config = load_config()
+    xgb_config = config.xgboost
     trainer = MicrostructureXGBTrainer(
-        features_path="data/stationary_features.parquet",
-        output_bin_dir="data/ga_inputs",
-        target_horizon_events=100,
-        fee_threshold_bps=1.5,
+        features_path=str(xgb_config.features_path),
+        output_bin_dir=str(xgb_config.output_dir),
+        target_horizon_events=xgb_config.target_horizon_events,
+        fee_threshold_bps=xgb_config.fee_threshold_bps,
+        xgb_params={
+            "tree_method": xgb_config.tree_method,
+            "device": xgb_config.device,
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "max_depth": xgb_config.max_depth,
+            "learning_rate": xgb_config.learning_rate,
+            "subsample": xgb_config.subsample,
+            "colsample_bytree": xgb_config.colsample_bytree,
+        },
+        num_boost_round=xgb_config.num_boost_round,
+        early_stopping_rounds=xgb_config.early_stopping_rounds,
     )
 
     start_t = time.perf_counter()
     X, y, feature_names, forward_returns = trainer.load_and_label_data()
-    oof_predictions = trainer.train_purged_cv(X, y, n_splits=5)
+    oof_predictions = trainer.train_purged_cv(
+        X,
+        y,
+        n_splits=xgb_config.folds,
+        embargo_pct=xgb_config.embargo_pct,
+    )
     trainer.save_for_triton_ga(X, oof_predictions, forward_returns)
 
     final_model = xgb.train(
-        {
-            "tree_method": "hist",
-            "device": "cuda",
-            "objective": "binary:logistic",
-            "eval_metric": "auc",
-            "max_depth": 6,
-            "learning_rate": 0.03,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-        },
+        trainer.xgb_params,
         xgb.DMatrix(X, label=y),
-        num_boost_round=800,
+        num_boost_round=trainer.num_boost_round,
     )
     final_model.save_model(trainer.output_bin_dir / "xgboost_final.json")
     

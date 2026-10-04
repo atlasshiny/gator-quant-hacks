@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 import numpy as np
 import polars as pl
+from python.config import load_config
 
 class MicrostructureEngineer:
     """
@@ -202,5 +203,9 @@ class MicrostructureEngineer:
 
 
 if __name__ == "__main__":
-    engineer = MicrostructureEngineer()
+    config = load_config()
+    engineer = MicrostructureEngineer(
+        raw_bin_path=str(config.data.unified_bin),
+        output_parquet=str(config.features.stationary_parquet),
+    )
     engineer.run()
