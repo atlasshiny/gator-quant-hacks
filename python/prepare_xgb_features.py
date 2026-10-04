@@ -6,7 +6,7 @@ from python.config import load_config
 
 class MicrostructureEngineer:
     """
-    Ingests the 73-column raw MBP-10 binary cache and generates 27 stationary 
+    Ingests the 73-column raw MBP-10 binary cache and generates 25 stationary
     microstructure features (OFI, OBI, Spreads, Slopes) for XGBoost training.
     """
     def __init__(
@@ -44,7 +44,7 @@ class MicrostructureEngineer:
 
     def engineer_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """
-        Computes 27 stationary microstructure signals using vectorized Polars operations.
+        Computes 25 stationary microstructure signals using vectorized Polars operations.
         """
         print("Computing stationary microstructure features...")
         
@@ -162,9 +162,9 @@ class MicrostructureEngineer:
             deep_ask_slope, deep_count_imbalance,
         ])
 
-        # 8. Filter to Final 27 Features + Metadata
+        # 8. Filter to Final 25 Features + Metadata
         final_feature_cols = (
-            [f"spread_l{i}" for i in range(5)] +
+            [f"spread_l{i}" for i in range(3)] +
             [f"obi_l{i}" for i in range(5)] +
             ["depth_imbalance", "bid_slope", "ask_slope", "cancel_add_ratio"] +
             [f"ofi_zscore_l{i}" for i in range(3)] +
@@ -175,8 +175,8 @@ class MicrostructureEngineer:
                 "deep_count_imbalance",
             ]
         )
-        if len(final_feature_cols) != 27:
-            raise ValueError(f"Expected 27 engineered features, got {len(final_feature_cols)}.")
+        if len(final_feature_cols) != 25:
+            raise ValueError(f"Expected 25 engineered features, got {len(final_feature_cols)}.")
         
         # Keep essential core columns needed by `train_xgb.py` for target generation
         retention_cols = ["ts_event", "ts_recv", "mid_price", "ask_px_00", "bid_px_00"] + final_feature_cols
