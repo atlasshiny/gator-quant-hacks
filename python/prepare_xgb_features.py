@@ -12,7 +12,7 @@ class MicrostructureEngineer:
     def __init__(
         self,
         raw_bin_path: str = "data/unified_mbp10.bin",
-        output_parquet: str = "data/stationary_features.parquet",
+        output_parquet: str = "output/features/stationary_features.parquet",
     ):
         self.raw_bin_path = Path(raw_bin_path)
         self.output_parquet = Path(output_parquet)

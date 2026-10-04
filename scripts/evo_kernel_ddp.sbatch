@@ -14,9 +14,9 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-mkdir -p logs
-test -s data/ga_inputs/features.bin
-test -s data/ga_inputs/returns.bin
+mkdir -p logs output/ga_results
+test -s output/ga_inputs/features.bin
+test -s output/ga_inputs/returns.bin
 
 # Load the necessary environment modules
 module purge
@@ -32,8 +32,8 @@ export NCCL_NET_MERGE_LEVEL=LOC
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
 uv run python -m python.model.distributed_ga
 
-test -s data/ga_outputs/best_strategy.json
-test -s data/ga_outputs/fitness_history.csv
+test -s output/ga_results/best_strategy.json
+test -s output/ga_results/fitness_history.csv
 echo "GA completed successfully."
-echo "Best strategy: data/ga_outputs/best_strategy.json"
-echo "Fitness history: data/ga_outputs/fitness_history.csv"
+echo "Best strategy: output/ga_results/best_strategy.json"
+echo "Fitness history: output/ga_results/fitness_history.csv"

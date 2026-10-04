@@ -263,6 +263,7 @@ if __name__ == "__main__":
 
     data_bin = str(ga_config.features_path)
     returns_bin = str(ga_config.returns_path)
+    ga_config.output_dir.mkdir(parents=True, exist_ok=True)
     os.environ["GA_OUTPUT_DIR"] = str(ga_config.output_dir)
     for path in (data_bin, returns_bin):
         if not os.path.isfile(path) or os.path.getsize(path) == 0:

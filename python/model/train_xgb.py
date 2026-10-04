@@ -9,8 +9,8 @@ from python.config import load_config
 class MicrostructureXGBTrainer:
     def __init__(
         self,
-        features_path: str = "data/stationary_features.parquet",
-        output_bin_dir: str = "data/ga_inputs",
+        features_path: str = "output/features/stationary_features.parquet",
+        output_bin_dir: str = "output/ga_inputs",
         target_horizon_events: int = 100, # e.g., 100 events ahead
         fee_threshold_bps: float = 1.5, # 1.5 bps fee barrier
         xgb_params: dict[str, object] | None = None,
@@ -196,6 +196,7 @@ if __name__ == "__main__":
         xgb.DMatrix(X, label=y),
         num_boost_round=trainer.num_boost_round,
     )
-    final_model.save_model(trainer.output_bin_dir / "xgboost_final.json")
+    xgb_config.model_path.parent.mkdir(parents=True, exist_ok=True)
+    final_model.save_model(xgb_config.model_path)
     
     print(f"Pipeline complete in {time.perf_counter() - start_t:.2f} seconds.")

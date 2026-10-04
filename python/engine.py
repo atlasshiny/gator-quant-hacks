@@ -28,14 +28,14 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.fees = (fees / 10000.0)  # Convert bps to decimal for VectorBT
 
-    def execute_backtest(self, signal_series: pd.Series, cache: bool = True, output_dir: str = "results") -> vbt.Portfolio:
+    def execute_backtest(self, signal_series: pd.Series, cache: bool = True, output_dir: str = "output/backtest") -> vbt.Portfolio:
         """Executes a standard VectorBT portfolio simulation using the generated signal series.
 
         Args:
             signal_series (pd.Series): Pandas Series containing integer signals (1 for Buy,
                 -1 for Sell, 0 for Hold) aligned with the dataset index.
             cache (bool): Whether or not to store backtest results to disk for future analysis.
-            output_dir (str): Directory where cache files will be saved. Defaults to "results".
+            output_dir (str): Directory where cache files will be saved. Defaults to "output/backtest".
 
         Returns:
             vbt.Portfolio: VectorBT Portfolio object containing performance stats,
