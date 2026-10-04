@@ -23,7 +23,7 @@ xgboost:
   model_path: output/models/xgboost_final.json
   target_horizon_events: 100
   fee_threshold_bps: 1.5
-  folds: 5
+  folds: 50
   embargo_pct: 0.01
   tree_method: hist
   device: cuda
