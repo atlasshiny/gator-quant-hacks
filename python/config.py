@@ -54,6 +54,8 @@ class XGBoostConfig(BaseModel):
     subsample: float = Field(gt=0, le=1)
     colsample_bytree: float = Field(gt=0, le=1)
     num_class: int = Field(gt=0)
+    explainability_dir: Path = Path("output/explainability")
+    shap_sample_rows: int = Field(default=50_000, gt=0)
 
 class GeneticAlgorithmConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

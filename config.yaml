@@ -34,6 +34,8 @@ xgboost:
   subsample: 0.8
   colsample_bytree: 0.8
   num_class: 3
+  explainability_dir: output/explainability
+  shap_sample_rows: 50000
 
 genetic_algorithm:
   features_path: output/ga_inputs/features.bin
