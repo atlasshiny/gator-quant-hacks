@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import xgboost as xgb
+from sklearn.model_selection import TimeSeriesSplit
 from python.config import load_config
 
 class MicrostructureXGBTrainer:
@@ -108,25 +109,34 @@ class MicrostructureXGBTrainer:
         """
         n_samples = len(X)
         oof_preds = np.full((n_samples, 3), np.nan, dtype=np.float32)
-        split_size = n_samples // n_splits
         embargo_size = int(n_samples * embargo_pct)
+        splitter = TimeSeriesSplit(n_splits=n_splits)
 
-        print(f"\nStarting {n_splits}-Fold Purged Walk-Forward Training...")
+        print(f"\nStarting {n_splits}-Fold Expanding Walk-Forward Training...")
 
-        for fold in range(n_splits - 1):
-            # Train on historical window, validate on next chronologically adjacent block
-            train_end = (fold + 1) * split_size
-            val_start = train_end + self.target_horizon + embargo_size  # Purge overlap + Embargo
-            val_end = min((fold + 2) * split_size, n_samples)
+        for fold, (train_indices, val_indices) in enumerate(
+            splitter.split(X),
+            start=1,
+        ):
+            # Remove the training tail whose forward labels overlap validation,
+            # plus the configured embargo gap.
+            train_end = train_indices[-1] + 1
+            purged_train_end = train_end - self.target_horizon - embargo_size
+            val_start = val_indices[0]
+            val_end = val_indices[-1] + 1
 
-            if val_start >= n_samples or val_start >= val_end:
-                break
+            if purged_train_end <= 0:
+                print(f"--- Fold {fold}/{n_splits} skipped: purge removed training data ---")
+                continue
 
-            X_train, y_train = X[:train_end], y[:train_end]
+            X_train, y_train = X[:purged_train_end], y[:purged_train_end]
             X_val, y_val = X[val_start:val_end], y[val_start:val_end]
 
-            print(f"--- Fold {fold + 1}/{n_splits - 1} ---")
-            print(f"Train Range: [0 : {train_end:,}] | Val Range: [{val_start:,} : {val_end:,}]")
+            print(f"--- Fold {fold}/{n_splits} ---")
+            print(
+                f"Train Range: [0 : {purged_train_end:,}] | "
+                f"Val Range: [{val_start:,} : {val_end:,}]"
+            )
 
             dtrain = xgb.DMatrix(X_train, label=y_train)
             dval = xgb.DMatrix(X_val, label=y_val)
