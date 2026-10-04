@@ -46,8 +46,8 @@ from nautilus_trader.model import InstrumentId, Venue
 from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
-from evaluation.metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
-from evaluation.split_sample import SampleSplitter, add_trading_day, trading_day_window
+from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
+from split_sample import SampleSplitter, add_trading_day, trading_day_window
 
 CATALOG_DIR = os.environ.get("CATALOG_DIR", "catalog")
 INSTRUMENT_ID = os.environ.get("INSTRUMENT_ID", "ESH4.GLBX")
@@ -57,8 +57,11 @@ VENUE_NAME = INSTRUMENT_ID.split(".")[-1]  # "GLBX"
 BUNDLE_PATH = os.environ.get("BUNDLE_PATH", "data/ga_inputs/frozen_bundle.json")
 MODEL_PATH = os.environ.get("MODEL_PATH", "data/ga_inputs/xgboost_final.json")
 
-STRATEGY_PATH = "nautilus_strategy:XGBBookStateStrategy"
-STRATEGY_CONFIG_PATH = "nautilus_strategy:XGBBookStateConfig"
+# Full dotted path: you run `python -m evaluation.backtest.nautilus_backtest` from the
+# repo root, so a bare "nautilus_strategy:..." would not be importable by Nautilus.
+STRATEGY_MODULE = os.environ.get("STRATEGY_MODULE", "evaluation.backtest.nautilus_strategy")
+STRATEGY_PATH = f"{STRATEGY_MODULE}:XGBBookStateStrategy"
+STRATEGY_CONFIG_PATH = f"{STRATEGY_MODULE}:XGBBookStateConfig"
 
 # Assumed order-to-venue latency (ms). This is an ASSUMPTION: report results for
 # several values (e.g. 0, 5, 20, 50). Set to 0 to disable the latency model.
@@ -78,6 +81,9 @@ def default_params() -> dict:
         "holding_ms": 1500,        # set from the in-sample duration of the label horizon
         "min_interval_ms": 500,
         "cooldown_ms": 500,
+        "capital": COSTS.capital,   # risk manager equity base = venue starting balance
+        # Set USE_RISK_MANAGER=0 to run the plain rule (ablation). Report both.
+        "use_risk_manager": os.environ.get("USE_RISK_MANAGER", "1") == "1",
     }
 
 
@@ -86,9 +92,14 @@ def make_latency_config():
     """Fixed latency applied to every order submission. None disables it."""
     if LATENCY_MS <= 0:
         return None
+    # In the 2.x API the venue config takes a model OBJECT (see Nautilus
+    # examples/backtest/model_configs_example.py), not an Importable config.
+    # Market orders are inserts. We put the whole delay in the base latency and leave
+    # the per-operation extras at 0 (assuming they are added on top of the base;
+    # check with a quick run at two latencies that results actually change).
     from nautilus_trader.execution import StaticLatencyModel
 
-    ns = int(LATENCY_MS * 1_000_000)   # nanoseconds)
+    ns = int(LATENCY_MS * 1_000_000)
     return StaticLatencyModel(
         base_latency_nanos=ns,
         insert_latency_nanos=0,
@@ -262,10 +273,29 @@ def report_position_stats(engine, label: str, contracts: int = 1) -> None:
         print(f"[WARN] {label}: could not build per-trade stats ({exc})")
 
 
+def report_risk(summary_path: str, label: str) -> None:
+    """Print what the risk manager blocked and why each trade was exited."""
+    import json
+
+    if not os.path.exists(summary_path):
+        print(f"[WARN] {label}: no risk summary at {summary_path}.")
+        return
+    s = json.load(open(summary_path))
+    mode = "risk manager ON" if s.get("use_risk_manager") else "plain rule (risk manager OFF)"
+    print(f"{label} [{mode}]: {s['entries_submitted']:,} entries, {s['trades_closed']:,} closed, "
+          f"strategy net ${s['strategy_net_pnl_usd']:,.2f}")
+    print(f"  blocked entries by reason: {s['blocks_by_reason'] or 'none'}")
+    print(f"  exits by reason:           {s['exits_by_reason'] or 'none'}")
+
+
 # Workflow
 def run_window(strategy_params: dict, days, label: str, start_offset: str = "0s"):
     start, end = trading_day_window(days, start_offset=start_offset)
-    params = {**strategy_params, "signal_log_path": f"signal_log_{label}.csv"}
+    params = {
+        **strategy_params,
+        "signal_log_path": f"signal_log_{label}.csv",
+        "risk_summary_path": f"risk_summary_{label}.json",
+    }
     cfg, strategy_cfg = make_run_config(params, start, end)
     node = BacktestNode(configs=[cfg])
     node.build()
@@ -276,6 +306,7 @@ def run_window(strategy_params: dict, days, label: str, start_offset: str = "0s"
     daily = daily_from_nautilus(engine, days)
     report_trades(params["signal_log_path"], label)
     report_position_stats(engine, label, int(params.get("trade_size", 1)))
+    report_risk(params["risk_summary_path"], label)
 
     return node, result, daily
 
