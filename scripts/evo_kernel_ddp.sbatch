@@ -27,6 +27,7 @@ export NCCL_DEBUG=INFO
 export NCCL_P2P_DISABLE=0 
 export NCCL_IB_DISABLE=0
 export NCCL_SOCKET_IFNAME='=bond0'
+export NCCL_NET_MERGE_LEVEL=LOC
 # Execute the driver script
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
 uv run python python/model/distributed_ga.py
