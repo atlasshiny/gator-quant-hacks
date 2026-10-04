@@ -32,9 +32,10 @@
 \renewcommand{\headrulewidth}{0.4pt}
  
 % ---------- Metadata (edit these) ----------
-\newcommand{\NoteTitle}{Your Strategy Title Here}
+\newcommand{\NoteTitle}{Algorithmic Genetic  Feature Selection to Improve XGBoost on E-mini S\&P~500 Order-Book Data.}
 \newcommand{\Authors}{Manny Osorio, Benjamin Friedman, Emily Diaz-Silva}
 \newcommand{\NoteDate}{\today}
+\newcommand{\TeamName}{}
  
 \begin{document}
  
@@ -411,34 +412,19 @@ Turnover (\% / month)     & \dots & \dots & \dots \\
 % ============================================================
 \section{Risk Management}
 % ============================================================
-Training an XGBoost model on MBP-10 data faces two major hurdles: overfitting to market noise and a large parameter search space [CITE THIS]. Adding Genetic Programming acts as a regularizer for the first and a search heuristic for the second [CITE THIS]. However, there still exists [BLANK]
-
-During training, the XGBoost model undergoes a backtesting engine following a fitness score tied to a financial metric [insert equation for what's inside Triton terminal].
+Price risk is small (at most two ES contracts, about \$500{,}000 notional on \$1{,}000{,}000, held $h$ seconds). The main risks are the 1.32-tick (\$16.50) round-trip spread, informed bursts that continue, thin books and model decay; all limits sit outside the GA.
 
 \subsection{Risk Controls}
-% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
-% sector/factor exposure limits.
 \begin{itemize}
-    \item Position limit: \dots
-    \item Volatility target: \dots
-    \item Gross / net exposure: \dots
-    \item Drawdown rule: \dots
-\end{itemize}
-
-\subsection{Risk Controls}
-% Position limits, volatility targeting, stop-loss/drawdown rules, leverage caps,
-% sector/factor exposure limits.
-\begin{itemize}
-    \item Position limit: \dots
-    \item Volatility target: \dots
-    \item Gross / net exposure: \dots
-    \item Drawdown rule: \dots
+    \item \textbf{Position limit:} at most 2 contracts, one position at a time, each order $\le 10\%$ of the size displayed at the touch.
+    \item \textbf{Volatility target:} each trade risks $\le 0.025\%$ of equity; size halves above $1.5\times$ normal 5-minute volatility for that time of day and entries stop above $2.5\times$.
+    \item \textbf{Gross / net exposure:} one instrument, so gross equals net; flat before the 16:00 CT break.
+    \item \textbf{Drawdown rule:} a 2\% daily loss halts the session; $-2\%$ from peak halves size; $-5\%$ stops trading for five sessions.
+    \item \textbf{Execution and model:} trade only if the predicted move is $\ge 1.5\times$ cost; halve size if the last 200 trades net $\le 0$; skip CPI, payroll and FOMC releases, holidays and roll weeks.
 \end{itemize}
  
 \subsection{Risk Decomposition}
-% Factor exposures (market, size, value, momentum), tail risk, VaR / CVaR,
-% performance in stress regimes (e.g., 2008, 2020, 2022).
-\dots
+P\&L is split into gross edge, spread, slippage and fees by burst size and time of day (edge should rise with burst size); we report the 97.5\% Expected Shortfall and the breakeven cost.
  
 % ============================================================
 \section{Liquidity and Capacity}
@@ -471,21 +457,22 @@ Max ADV participation (\%) & \dots & \dots & \dots & \dots \\
 % ============================================================
 \subsection{Limitations}
 \begin{itemize}
-    \item Data: \dots
-    \item Overfitting / multiple-testing risk: \dots
-    \item Regime dependence: \dots
-    \item Execution and cost assumptions: \dots
+    \item \textbf{Data:} six months of one instrument, two unadjusted rolls, no queue position in MBP-10.
+    \item \textbf{Overfitting / multiple-testing risk:} about 400{,}000 GA trials on overlapping returns.
+    \item \textbf{Regime dependence:} stress-tested only in a 'calm' market; bursts may not revert under stress.
+    \item \textbf{Execution and cost assumptions:} 1.32-tick round trips; no impact or latency model.
 \end{itemize}
  
 \subsection{Next Steps}
 \begin{itemize}
-    \item \dots
-    \item \dots
-    \item \dots
+    \item Hold out a clean test period and fix overlapping fitness.
+    \item Extend to two or more years, including 2022 and August 2024, and test on NQ.
+    \item Use MBO data to simulate passive orders, then paper-trade live in MES contracts.
 \end{itemize}
  
  
-\clearpage
+
+
 \addcontentsline{toc}{section}{References}
 \begin{thebibliography}{99}
 \small
@@ -498,6 +485,14 @@ Implementation,''
 \textit{Edelweiss Applied Science and Technology}, vol.~9, no.~10,
 pp.~334--345, 2025.
 \url{https://doi.org/10.55214/2576-8484.v9i10.10407}
+
+\bibitem{bailey2014dsr}
+D.~H. Bailey and M.~L\'opez de Prado,
+``The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest
+Overfitting and Non-Normality,''
+\textit{Journal of Portfolio Management}, vol.~40, no.~5,
+pp.~94--107, 2014.
+\url{https://doi.org/10.3905/jpm.2014.40.5.094}
 
 
 \end{thebibliography}
