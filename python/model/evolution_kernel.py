@@ -71,7 +71,9 @@ def evolution_kernel_grid(
 
     # Dynamic Backtest Loop
     for start_sample in range(0, n_samples, BLOCK_SIZE):
-        sample_offsets = start_sample + tl.arange(0, BLOCK_SIZE)
+        sample_offsets = tl.cast(start_sample, tl.int64) + tl.cast(
+            tl.arange(0, BLOCK_SIZE), tl.int64
+        )
         mask = sample_offsets < n_samples
         active_mask = mask & (sample_offsets >= lookback_decoded)
 
@@ -115,7 +117,7 @@ def evolution_kernel_grid(
         # Approximate turnover friction within the block. Recompute the
         # previous lane's signal for intra-block transitions; lane zero is
         # explicitly zero so block boundaries have no cross-block dependency.
-        previous_offsets = sample_offsets - 1
+        previous_offsets = sample_offsets - tl.full([BLOCK_SIZE], 1, tl.int64)
         previous_mask = mask & (sample_offsets > start_sample)
         previous_active = previous_mask & (previous_offsets >= lookback_decoded)
         previous_features = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
