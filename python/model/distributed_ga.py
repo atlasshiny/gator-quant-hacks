@@ -1,11 +1,16 @@
+import csv
+import json
 import os
+import time
+from pathlib import Path
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import numpy as np
+from python.config import load_config
 
 # Import the optimized evaluation pipeline and chromosome schema
-from evolution_kernel import evaluate_population
+from evolution_kernel import (_count_rows_from_binary, evaluate_population, load_memmap_tensor)
 from chromosome import StrategyChromosome
 
 # DISTRIBUTED ENVIRONMENT INITIALIZATION
@@ -33,8 +38,8 @@ def crossover_and_mutate(
     n_offspring = n_pop - n_elite
 
     # Keep the absolute best performers untouched so we never lose good traits
-    sorted_indices = torch.argsort(fitness, descending=True).cpu().numpy()
-    elites = population[sorted_indices[:n_elite]]
+    elite_indices = torch.topk(fitness, k=n_elite, largest=True).indices.cpu().numpy()
+    elites = population[elite_indices]
 
     # Randomly select parents from the elite pool to breed the next generation.
     # (In a more advanced setup, you could use Tournament Selection here)
@@ -99,14 +104,91 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
 
         print(f"[GPU {rank}] Island Initialized with {local_pop_size} strategies.")
 
+        output_dir = Path(os.environ["GA_OUTPUT_DIR"])
+        history: list[dict[str, float | int]] = []
+        global_best: dict[str, float | int] | None = None
+        n_features = 28
+        n_samples = _count_rows_from_binary(data_bin, n_features)
+        data_gpu = load_memmap_tensor(
+            data_bin,
+            dtype=np.float32,
+            shape=(n_samples, n_features),
+            device=f"cuda:{rank}",
+        )
+        returns_gpu = load_memmap_tensor(
+            returns_bin,
+            dtype=np.float32,
+            shape=(n_samples,),
+            device=f"cuda:{rank}",
+        ).contiguous()
+        torch.cuda.synchronize(rank)
+        if rank == 0:
+            print(
+                f"[GA] Loaded {n_samples:,} samples x {n_features} features "
+                "onto each GPU.",
+                flush=True,
+            )
+
         for gen in range(generations):
+            eval_start = time.perf_counter()
             fitness = evaluate_population(
                 data_bin_path=data_bin,
                 population_bitmasks=local_population,
-                returns_bin_path=returns_bin
+                n_features=n_features,
+                data_gpu=data_gpu,
+                returns_gpu=returns_gpu,
+                n_samples=n_samples,
             )
+            torch.cuda.synchronize(rank)
+            eval_seconds = time.perf_counter() - eval_start
 
             best_idx = torch.argmax(fitness)
+            local_best_score = fitness[best_idx].detach()
+            local_best_bits = torch.tensor(
+                [local_population[best_idx.item() : best_idx.item() + 1].view(np.int64)[0]],
+                dtype=torch.int64,
+                device=f"cuda:{rank}",
+            )
+            gathered_scores = [
+                torch.empty(1, dtype=torch.float32, device=f"cuda:{rank}")
+                for _ in range(world_size)
+            ]
+            gathered_bits = [
+                torch.empty(1, dtype=torch.int64, device=f"cuda:{rank}")
+                for _ in range(world_size)
+            ]
+            dist.all_gather(gathered_scores, local_best_score.reshape(1))
+            dist.all_gather(gathered_bits, local_best_bits)
+
+            if rank == 0:
+                best_rank = max(
+                    range(world_size),
+                    key=lambda index: gathered_scores[index].item(),
+                )
+                best_score = gathered_scores[best_rank].item()
+                best_bits = np.array(
+                    [gathered_bits[best_rank].item()], dtype=np.int64
+                ).view(np.uint64)[0]
+                history.append({"generation": gen, "fitness": best_score})
+                if global_best is None or best_score > float(global_best["fitness"]):
+                    global_best = {
+                        "generation": gen,
+                        "fitness": best_score,
+                        "chromosome": int(best_bits),
+                    }
+                    print(
+                        f"[GA] New all-time best at generation {gen}: "
+                        f"{best_score:.3f}",
+                        flush=True,
+                    )
+                print(
+                    f"[Generation {gen:03d}] best={best_score:.3f} "
+                    f"eval={eval_seconds:.2f}s "
+                    f"throughput={local_pop_size * n_samples / eval_seconds:,.0f} "
+                    "strategy-samples/s",
+                    flush=True,
+                )
+
             local_elite_host = local_population[best_idx.item():best_idx.item() + 1].copy()
             local_population = crossover_and_mutate(local_population, fitness)
 
@@ -125,7 +207,7 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                 dist.all_gather(gathered_elites, local_elite)
 
                 if rank == 0:
-                    print(f"--- Generation {gen} Migration ---")
+                    print(f"--- Generation {gen} Migration ---", flush=True)
 
                 for i, elite_tensor in enumerate(gathered_elites):
                     received_bits = np.array(
@@ -133,9 +215,29 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                     ).view(np.uint64)[0]
                     local_population[-world_size + i] = received_bits
 
-            if rank == 0 and gen % 10 == 0:
-                top_score = torch.max(fitness).item()
-                print(f"[Generation {gen}] Best Deflated Sharpe on Cluster: {top_score:.3f}")
+        if rank == 0 and global_best is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            best_strategy = StrategyChromosome.decode(global_best["chromosome"])
+            result = {
+                **global_best,
+                "world_size": world_size,
+                "population": total_population_size,
+                "generations": generations,
+                "migration_frequency": migration_freq,
+                "features_path": data_bin,
+                "returns_path": returns_bin,
+                "strategy": best_strategy,
+            }
+            with (output_dir / "best_strategy.json").open("w", encoding="utf-8") as file:
+                json.dump(result, file, indent=2)
+            with (output_dir / "fitness_history.csv").open(
+                "w", newline="", encoding="utf-8"
+            ) as file:
+                writer = csv.DictWriter(file, fieldnames=["generation", "fitness"])
+                writer.writeheader()
+                writer.writerows(history)
+            print(f"Saved best strategy: {output_dir / 'best_strategy.json'}")
+            print(f"Saved fitness history: {output_dir / 'fitness_history.csv'}")
     finally:
         cleanup()
 
@@ -149,22 +251,28 @@ if __name__ == "__main__":
     print(f"Launching distributed GA across {WORLD_SIZE} GPUs...")
     
     # Run Parameters
-    TOTAL_POPULATION = 12_000
-    GENERATIONS = 100
-    MIGRATION_FREQ = 25
-    
-    # Mock data references (ensure these files exist before running)
-    mock_data = "test_features.bin"
-    mock_returns = "test_returns.bin"
-    
-    if not os.path.exists(mock_data):
-        np.random.randn(10_000, 8).astype(np.float32).tofile(mock_data)
-        np.random.randn(10_000).astype(np.float32).tofile(mock_returns)
+    config = load_config()
+    ga_config = config.genetic_algorithm
+    TOTAL_POPULATION = ga_config.population
+    GENERATIONS = ga_config.generations
+    MIGRATION_FREQ = ga_config.migration_frequency
+
+    data_bin = str(ga_config.features_path)
+    returns_bin = str(ga_config.returns_path)
+    os.environ["GA_OUTPUT_DIR"] = str(ga_config.output_dir)
+    for path in (data_bin, returns_bin):
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise FileNotFoundError(
+                f"Production GA input is missing or empty: {path}. "
+                "Run the feature/XGBoost stage first."
+            )
+    print(f"Using production GA features: {data_bin}")
+    print(f"Using production GA returns: {returns_bin}")
 
     # Spawn a process for each GPU
     mp.spawn(
         run_island_node,
-        args=(WORLD_SIZE, mock_data, mock_returns, TOTAL_POPULATION, GENERATIONS, MIGRATION_FREQ),
+        args=(WORLD_SIZE, data_bin, returns_bin, TOTAL_POPULATION, GENERATIONS, MIGRATION_FREQ),
         nprocs=WORLD_SIZE,
         join=True
     )

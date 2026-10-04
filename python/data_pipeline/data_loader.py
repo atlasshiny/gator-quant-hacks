@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import torch
+from python.config import load_config
 
 class RawDatabentoUnifier:
     """
@@ -146,7 +147,11 @@ class RawDatabentoUnifier:
         return pinned_tensor.to(device=device, non_blocking=True)
 
 if __name__ == "__main__":
-    loader = RawDatabentoUnifier()
+    config = load_config()
+    loader = RawDatabentoUnifier(
+        parquet_dir=str(config.data.parquet_dir),
+        cache_path=str(config.data.unified_bin),
+    )
     
     # First run will take time to stitch and save. Future runs load instantly.
     unified_matrix = loader.build_binary_cache()

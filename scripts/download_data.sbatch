@@ -10,6 +10,8 @@
 #SBATCH --account=ai-workshop
 #SBATCH --qos=ai-workshop
 
+set -euo pipefail
+
 # ---------------------------------------------------------------------
 # Parameter Handling
 # Default values are used if positional arguments are not provided.
@@ -31,7 +33,7 @@ echo "Dataset : $DATASET"
 echo "Schema : $SCHEMA"
 
 # Change to the repository root directory
-cd $SLURM_SUBMIT_DIR
+cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 # Load Conda / Modules if required on HiPerGator
 module load conda
@@ -43,7 +45,7 @@ source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 mkdir -p logs
 
 # Run Python data ingestion script passing positional arguments
-uv run python/download_databento.py \
+uv run python python/data_pipeline/download_databento.py \
     --symbol "$SYMBOL" \
     --start "$START_DATE" \
     --end "$END_DATE" \
