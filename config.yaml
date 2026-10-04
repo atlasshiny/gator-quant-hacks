@@ -13,17 +13,17 @@ data:
   unified_bin: data/unified_mbp10_january.bin
 
 features:
-  stationary_parquet: output/features/stationary_features.parquet
+  stationary_parquet: output/features/stationary_features_january.parquet
   expected_base_features: 25
   total_kernel_features: 28
 
 xgboost:
-  features_path: output/features/stationary_features.parquet
-  output_dir: output/ga_inputs
-  model_path: output/models/xgboost_final.json
+  features_path: output/features/stationary_features_january.parquet
+  output_dir: output/ga_inputs_january
+  model_path: output/models/xgboost_january.json
   target_horizon_events: 100
   fee_threshold_bps: 1.5
-  folds: 50
+  folds: 5
   embargo_pct: 0.01
   tree_method: hist
   device: cuda
@@ -35,13 +35,13 @@ xgboost:
   colsample_bytree: 0.8
   directional_class_weight: 5.0
   num_class: 3
-  explainability_dir: output/explainability
+  explainability_dir: output/explainability_january
   shap_sample_rows: 50000
 
 genetic_algorithm:
-  features_path: output/ga_inputs/features.bin
-  returns_path: output/ga_inputs/returns.bin
-  output_dir: output/ga_results
+  features_path: output/ga_inputs_january/features.bin
+  returns_path: output/ga_inputs_january/returns.bin
+  output_dir: output/ga_results_january
   population: 1000
   generations: 400
   migration_frequency: 50
