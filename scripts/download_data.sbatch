@@ -45,7 +45,7 @@ source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 mkdir -p logs
 
 # Run Python data ingestion script passing positional arguments
-uv run python python/data_pipeline/download_databento.py \
+uv run python -m python.data_pipeline.download_databento \
     --symbol "$SYMBOL" \
     --start "$START_DATE" \
     --end "$END_DATE" \

@@ -17,7 +17,7 @@ module load conda cuda/12.8.1
 source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 mkdir -p logs
 
-uv run python python/data_pipeline/data_loader.py
+uv run python -m python.data_pipeline.data_loader
 
 test -s data/unified_mbp10.bin
 echo "Raw data unification completed successfully."
