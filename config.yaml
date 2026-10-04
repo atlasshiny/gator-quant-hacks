@@ -33,6 +33,7 @@ xgboost:
   learning_rate: 0.03
   subsample: 0.8
   colsample_bytree: 0.8
+  directional_class_weight: 5.0
   num_class: 3
   explainability_dir: output/explainability
   shap_sample_rows: 50000
