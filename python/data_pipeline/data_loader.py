@@ -156,6 +156,4 @@ if __name__ == "__main__":
     # First run will take time to stitch and save. Future runs load instantly.
     unified_matrix = loader.build_binary_cache()
     
-    # Transfer 73-column schema to HiPerGator GPU
-    gpu_tensor = loader.load_to_vram(unified_matrix)
-    print(f"GPU Tensor Shape: {gpu_tensor.shape}")
+    print(f"Unified cache shape: {unified_matrix.shape}")

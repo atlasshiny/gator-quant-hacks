@@ -4,18 +4,19 @@
 #SBATCH --error=logs/raw_unifier_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16gb
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64gb
 #SBATCH --partition=hpg-b200
-#SBATCH --gpus=1
-#SBATCH --time=01:30:00
+#SBATCH --time=04:00:00
 
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-module load conda cuda/12.8.1
+module load conda
 source activate /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
 mkdir -p logs
+
+export POLARS_MAX_THREADS="${SLURM_CPUS_PER_TASK}"
 
 uv run python -m python.data_pipeline.data_loader
 
