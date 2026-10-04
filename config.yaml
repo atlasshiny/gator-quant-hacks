@@ -9,8 +9,8 @@ data:
   stype_in: continuous
   start: "2024-01-08T00:00:00Z"
   end: "2024-07-08T00:00:00Z"
-  parquet_dir: data/GLBX.MDP3
-  unified_bin: data/unified_mbp10.bin
+  parquet_dir: data/GLBX.MDP3_january
+  unified_bin: data/unified_mbp10_january.bin
 
 features:
   stationary_parquet: output/features/stationary_features.parquet
