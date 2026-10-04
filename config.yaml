@@ -38,7 +38,7 @@ genetic_algorithm:
   features_path: output/ga_inputs/features.bin
   returns_path: output/ga_inputs/returns.bin
   output_dir: output/ga_results
-  population: 20000
-  generations: 100
-  migration_frequency: 25
+  population: 1000
+  generations: 400
+  migration_frequency: 50
   chromosome_features: 28
