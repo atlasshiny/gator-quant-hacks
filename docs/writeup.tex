@@ -26,10 +26,8 @@
  
 \pagestyle{fancy}
 \fancyhf{}
-\lhead{\small Gator Quant Hacks -- Systematic Trading Track}
-\rhead{\small \TeamName}
 \cfoot{\small\thepage}
-\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrulewidth}{0pt}
  
 % ---------- Metadata (edit these) ----------
 \newcommand{\NoteTitle}{Algorithmic Genetic  Feature Selection to Improve XGBoost on E-mini S\&P~500 Order-Book Data.}
@@ -45,61 +43,79 @@
     {\large Quant Note -- Systematic Trading Track}\\[4pt]
     \Authors
 \end{center}
-\vspace{4pt}
-\hrule
-\vspace{8pt}
  
 % ============================================================
 \section{Summary}
 % ============================================================
 % 3--5 sentences: what the strategy does, the core edge, headline results, key caveat.
-\textbf{Strategy in one line:} \dots
+\textbf{Overall Strategy:} On each ES order-book update, we combine the GA-selected book features and XGBoost output into one standardized score. If it clears a cost-based threshold, then we take a one-contract market position in that direction, then exit after a fixed holding time.
  
-\textbf{Headline results (out-of-sample):}
-\begin{itemize}
-    \item Annualized return: \dots\% \quad Annualized volatility: \dots\%
-    \item Sharpe ratio: \dots \quad Max drawdown: \dots\%
-    \item Average turnover: \dots\% per month \quad Est. capacity: \$\dots M
-\end{itemize}
- 
-\textbf{Key takeaway:} \dots
+We study whether the shape of the ten-level order book of the CME E-mini
+S\&P~500 future (ES) predicts the direction of the mid-price over the next
+[$h$] seconds by more than a simple top-of-book rule. An XGBoost model
+estimates the probabilities of a down move, no move, and an up move from
+[25] book-state features; a genetic algorithm (GA), accelerated on GPUs,
+searches for the feature subset, entry threshold, and warm-up that turn the model's output into a trading rule. The rule is frozen on in-sample days and replayed once, out of sample, in an event-driven simulator that fills market orders against the recorded order book. Out of sample and net of fees, the strategy achieves [X] trades with a mean net P\&L of \$[Y] per trade (t-statistic [T]), a net Sharpe ratio of [S] and a maximum drawdown of [D]\% over [N] trading days. It [does / does not] beat a random feature subset and a level-1 imbalance rule. The sample covers one instrument and [N] sessions (about [six] months), so we report per-trade statistics, uncertainty around the Sharpe ratio, and sensitivity to latency and costs alongside the headline
+numbers.
  
 % ============================================================
 \section{Economic and Data Hypothesis}
 % ============================================================
-\subsection{Literature and Inspiration}
  
 \subsection{Economic Hypothesis}
+We expect the shape of the ES ten-level order book (depth imbalance across
+levels, depth slope, spread, and recent order flow) to contain information
+about the direction of the mid-price over the next [$h$] seconds that a
+simple top-of-book rule does not capture. Market makers update quotes with a
+delay and must avoid trading against informed flow, so transient book
+imbalances are briefly mispriced. Traders who cross the spread without regard
+to the state of the book pay for that, and so do market makers whose quotes
+are stale. These participants are on the other side of our trades. The edge
+persists because supplying liquidity into such imbalances means bearing
+adverse-selection risk (some imbalances are informed and continue), which
+limits how much capital competes the concession away. We do not impose the
+sign of the effect: the model estimates it from the data.
+ 
+\paragraph{Testable prediction.} Net of spread and fees, the frozen rule earns
+a positive out-of-sample return; realized forward returns increase across
+buckets of the model's directional score; and the rule beats (1) a random
+feature subset of the same size and (2) the sign of level-1 imbalance.
+ 
+\paragraph{It fails if.} (1) the out-of-sample net return is not positive
+once spread crossing and fees are included; (2) realized returns are not
+monotone in the directional score; or (3) the rule does not beat both
+baselines. Our strategy trades with marketable orders and therefore pays the
+spread it hopes to earn, so (1) is the most likely failure.
 % State a falsifiable hypothesis.
-We expect the E-mini S\&P~500 future (ES) to partly revert over the next
-$h = [\,]$ seconds after bursts of heavy aggressive trading, defined as
-large signed executed volume within a short window. The aggressive trader
-pays for immediacy, and because market makers cannot cancel stale quotes
-instantly, the burst temporarily pushes price beyond its fair value; once
-displayed depth refills and no new information arrives, price partly
-snaps back. The traders on the other side of a reversal trade are
-therefore impatient participants who accept a worse price to execute now,
-and market makers whose quotes are picked off. The edge persists because
-supplying liquidity against these bursts means bearing adverse-selection
-risk (some bursts are informed and continue), which limits how much
-capital competes the concession away.
+% We expect the E-mini S\&P~500 future (ES) to partly revert over the next
+% $h = [\,]$ seconds after bursts of heavy aggressive trading, defined as
+% large signed executed volume within a short window. The aggressive trader
+% pays for immediacy, and because market makers cannot cancel stale quotes
+% instantly, the burst temporarily pushes price beyond its fair value; once
+% displayed depth refills and no new information arrives, price partly
+% snaps back. The traders on the other side of a reversal trade are
+% therefore impatient participants who accept a worse price to execute now,
+% and market makers whose quotes are picked off. The edge persists because
+% supplying liquidity against these bursts means bearing adverse-selection
+% risk (some bursts are informed and continue), which limits how much
+% capital competes the concession away.
 
-The ten-level book may contain information the market does not fully
-price into a simple rule: depth beyond the best quote and the speed of
-depth refill indicate whether a move is likely temporary. The role of the
-GA and XGBoost is to learn which bursts revert and which continue.
+% The ten-level book may contain information the market does not fully
+% price into a simple rule: depth beyond the best quote and the speed of
+% depth refill indicate whether a move is likely temporary. The role of the
+% GA and XGBoost is to learn which bursts revert and which continue.
 
-\textbf{Testable prediction.} Net of costs, the frozen model earns a
-positive out-of-sample return; reversals are larger after larger,
-higher-volume bursts (verified by bucketing trades by burst size); and the
-model beats both a random subset of the same number of features and a
-plain ``fade the last burst'' rule.
+% \textbf{Testable prediction.} Net of costs, the frozen model earns a
+% positive out-of-sample return; reversals are larger after larger,
+% higher-volume bursts (verified by bucketing trades by burst size); and the
+% model beats both a random subset of the same number of features and a
+% plain ``fade the last burst'' rule.
 
-\textbf{Fails if.} (1) Out-of-sample net return is not positive once
-spread crossing and fees are included; our strategy trades with
-marketable orders and therefore pays the spread it hopes to earn, and
-passive fills cannot be simulated; (2) reversal strength does not
-increase with burst size; or (3) the model does not beat the baselines.
+% \textbf{Fails if.} (1) Out-of-sample net return is not positive once
+% spread crossing and fees are included; our strategy trades with
+% marketable orders and therefore pays the spread it hopes to earn, and
+% passive fills cannot be simulated; (2) reversal strength does not
+% increase with burst size; or (3) the model does not beat the baselines.
 
  
 % ============================================================
@@ -111,132 +127,182 @@ Databento's continuous front-month symbol \texttt{ES.c.0}, which maps to
 the March 2024 contract (ESH4) throughout the sample; no contract roll
 occurs in-sample and prices are not back-adjusted.
 
-Market data is obtained from Databento~\cite{databento} (dataset \texttt{GLBX.MDP3}, schema \texttt{mbp-10}), which provides every order-book event with the top ten price levels on each side at nanosecond resolution. The sample covers [Monday 2024-01-08 through Friday 2024-01-12, INSERT ANOTHER DATE], [N COUNT EVENTS] book events.
+Market data is obtained from Databento~\cite{Databento} (dataset \texttt{GLBX.MDP3}, schema \texttt{mbp-10}), which provides every order-book event with the top ten price levels on each side at nanosecond resolution. The sample covers [Monday 2024-01-08 through Friday 2024-01-12, INSERT ANOTHER DATE], [N COUNT EVENTS] book events.
 
 We use the [\texttt{ts\_recv} / \texttt{ts\_event}] timestamp for all features. Survivorship bias and corporate actions do not apply to a single futures contract. Snapshots with a crossed or locked book are dropped, empty
 levels are filled with zero size, and no feature or label spans the daily
 17:00--18:00 ET maintenance break.
-% \subsection{Data Sources}
-% % \begin{table}[H]
-% % \centering
-% % \caption{Data sources}
-% % \begin{tabular}{llll}
-% % \toprule
-% % Dataset & Provider & Frequency & Date Range \\
-% % \midrule
-% % Prices/returns & \dots & Daily & \dots \\
-% % Signal data    & \dots & \dots & \dots \\
-% % \bottomrule
-% % \end{tabular}
-% % \end{table}
- 
-\subsection{Universe Construction}
-% Asset class, filters (price, ADV, market cap), rebalancing of membership,
-% survivorship-bias handling.
-\dots
- 
-\subsection{Data Cleaning and Point-in-Time Integrity}
-% Missing data, outliers/winsorization, corporate actions, reporting lags,
-% how look-ahead bias was avoided.
-\dots
+
  
 % ============================================================
 \section{Methodology}
 % ============================================================
-\subsection{System Architecture and Training}
+\subsection{Model Training}
 % Define Genetic Programming + XGBoost
-We deploy an XGBoost model with GPU-accelerated histogram tree construction on each of $G$ GPUs. Each GPU is allocated a 64-bit feature genome, i.e.\ a fixed budget of 64 binary slots, and a genetic algorithm (GA) evolves which features from a predefined candidate library occupy those slots. The GA searches over the \emph{feature subsets} rather than evolving formulas and selects which to mutate. The candidate features themselves and their bit allocations are shown in Table~\ref{tab:genome}. The pipeline has four stages: (1)~genome encoding, (2)~fused GPU fitness evaluation, (3)~evolution, and
-(4)~XGBoost training and signal generation.
-
-% change table once features are decided
-\begin{table}[t]
+\subsection{Model and Genetic Search}
+\paragraph{XGBoost.} A gradient-boosted tree classifier~\cite{chen2016xgboost}
+(GPU histogram method, \texttt{multi:softprob}, three classes) outputs
+$[P_{\text{sell}},P_{\text{hold}},P_{\text{buy}}]$. Out-of-fold probabilities
+are produced with an expanding-window purged walk-forward scheme
+\cite{lopezdeprado2018}: validation blocks begin $H$ rows plus an embargo after
+the end of the training block, so that overlapping labels do not cross the
+boundary. The first block has no out-of-fold prediction and is excluded. The
+directional score is
+\begin{equation}
+    q_i = P_{\text{buy}}(\mathbf{x}_i) - P_{\text{sell}}(\mathbf{x}_i) \in [-1,1],
+\end{equation}
+and is appended to the feature matrix as one GA input column. The deployed
+model is trained once on all in-sample rows.
+ 
+\paragraph{Genome.} Each individual is a 64-bit chromosome
+(Table~\ref{tab:genome}). The 28 GA input columns are the snapshot features,
+the score $q$, and unused padding columns whose flag bit is held at zero.
+ 
+\begin{table}[h]
 \centering
-\caption{Candidate features and genome bit allocation.}
+\caption{Chromosome layout (64 bits).}
 \label{tab:genome}
 \small
-\begin{tabular}{@{}lc@{}}
+\begin{tabular}{@{}lcl@{}}
 \toprule
-\textbf{Candidate features} & \textbf{Bits} \\
+\textbf{Field} & \textbf{Bits} & \textbf{Meaning} \\
 \midrule
-Returns / momentum (8 features, TBD)      & 8 \\
-Volatility (8 features, TBD)              & 8 \\
-Volume / trade flow (8 features, TBD)     & 8 \\
-Order-book imbalance (8 features, TBD)    & 8 \\
-Spread / liquidity (8 features, TBD)      & 8 \\
-Mean reversion (8 features, TBD)          & 8 \\
-Time / calendar (8 features, TBD)         & 8 \\
-Macro, FRED (8 features, TBD)             & 8 \\
+Feature flags & 28 & Bit $j$ switches GA input column $j$ on or off \\
+Lookback & 12 & Gray-coded warm-up: initial events skipped in evaluation \\
+Threshold & 12 & $\tau = \text{value}/1000$, in standardized units \\
+Risk & 12 & Scale of simulated position; no effect on fitness, not used for sizing \\
 \midrule
-\textbf{Total (X bits)}              & \textbf{64} \\
+\textbf{Total} & \textbf{64} & \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\paragraph{Stage 1: Genome encoding.}
-Each individual is a genome $b \in \{0,1\}^{64}$ stored as a single
-\texttt{uint64}, which indexes a mask over $F = 64$ candidate features:
+ 
+\paragraph{Rule and fitness.} Each GA input column is standardized with
+in-sample statistics, $z_{i,j} = (u_{i,j}-\mu_j)/(\sigma_j+\varepsilon)$. For a
+chromosome $b$ with active set $\mathcal{S}_b$ and threshold $\tau_b$, the
+signal and position are
 \begin{equation}
-    M_j = b_j, \qquad \mathbf{x}^{(M)}_{i,t} = \left(x_{i,t,j}\right)_{j:\,M_j = 1},
+    S_i = \sum_{j\in\mathcal{S}_b} z_{i,j}, \qquad
+    p_i = \begin{cases} +1 & S_i > \tau_b \\ -1 & S_i < -\tau_b \\ 0 & \text{otherwise,}\end{cases}
 \end{equation}
-where $x_{i,t,j}$ is feature $j$ for asset $i$ at time $t$. The genome is
-partitioned into 8 bytes, which serve as the unit of mutation and crossover.
-The search space has size $2^{64}$, so exhaustive evaluation is infeasible
-and a heuristic search is warranted.
-
-\paragraph{Stage 2: Fused GPU fitness evaluation.}
-Fitness is evaluated by a fused Triton kernel that keeps the feature tensor
-resident in GPU memory. In a single pass it computes, over the training
-window only, (a)~each feature's rolling information coefficient with the
-forward return
-$\mathrm{IC}_j = \mathrm{corr}(x_{\cdot,\cdot,j},\, r_{t \to t+h})$,
-(b)~the pairwise feature correlation matrix $C \in \mathbb{R}^{64 \times 64}$,
-and (c)~a mutual-information estimate between each feature and the target.
-Given a genome with active set $S = \{j : M_j = 1\}$, fitness is
+% TODO(verify): the Triton kernel includes the short side (p_i = -1),
+% charges costs, and runs on standardized columns.
+and the per-event net return is
+$\tilde r_{b,i} = p_i\, r_{i\to i+H} - |p_i|\,c_{\text{rt}}$, with
+$c_{\text{rt}}$ the measured round-trip cost. A fused Triton
+kernel~\cite{tillet2019triton} evaluates the whole population in GPU memory,
+accumulating the first four moments of $\tilde r_{b,i}$ in a single pass.
+Fitness is a Sharpe-type score penalized for negative skewness and excess
+kurtosis,
 \begin{equation}
-    \mathcal{F}(b) \;=\; \underbrace{\frac{1}{|S|}\sum_{j \in S} \left|\mathrm{IC}_j\right|}_{\text{signal quality}}
-    \;-\; \lambda_1 \left|S\right|
-    \;-\; \lambda_2 \underbrace{\frac{1}{|S|(|S|-1)}\sum_{\substack{j,k \in S\\ j \neq k}} \left|C_{jk}\right|}_{\text{redundancy}},
+    \mathcal{F}(b) = \mathrm{SR}_b - 0.5\max(0,-\gamma_{1,b}) - 0.1\max(0,\gamma_{2,b}-3),
 \end{equation}
-where $\lambda_1$ penalizes subset size and $\lambda_2$ penalizes mean
-pairwise correlation. Because $C$ is computed once per window, scoring a
-genome reduces to indexing into precomputed quantities, so an entire
-population can be evaluated in parallel with negligible marginal cost.
+where $\mathrm{SR}_b$ is the mean over the standard deviation of $\tilde
+r_{b,i}$ (scaled by a fixed constant) and $\gamma_1,\gamma_2$ are skewness and
+kurtosis. The score is used only to rank chromosomes; we do not report it as a
+performance measure.
+ 
+\paragraph{Evolution.} The population is split into islands, one per GPU
+($G=[\,]$ GPUs, total population $P=[\,]$). Each generation keeps the top 10\%
+unchanged, draws parents uniformly from that elite group, applies
+single-point crossover at a random bit, and flips one random bit in each
+offspring with probability 0.10. Every $[m]$ generations the islands exchange
+their best chromosomes. We run $T=[\,]$ generations and record the number of
+evaluated chromosomes $N_{\text{eval}} = P\cdot T = [\,]$, because a larger
+search makes the best in-sample result look better by chance
+(Section~\ref{sec:limits}).
 
-\paragraph{Stage 3: Evolution.}
-Each generation applies the following operators to the population:
-\begin{itemize}
-    \item \textbf{Selection:} tournament selection of size $[k]$ on $\mathcal{F}$,
-    with elitism preserving the top $[e]$ genomes.
-    \item \textbf{Crossover:} uniform byte-wise crossover, where each of the
-    8 child bytes is inherited from one parent chosen with probability $0.5$.
-    \item \textbf{Mutation:} each byte is mutated independently with
-    probability $p_{\text{byte}}$ by XOR with a random byte, which is
-    equivalent to flipping a random subset of that byte's bits.
-    $p_{\text{byte}}$ is set so the expected per-bit flip rate lies in
-    $[1\%, 5\%]$.
-\end{itemize}
-Populations evolve independently on each GPU and exchange their best
-genomes every $[m]$ generations, following an island model. At the end of
-the search on each window, the genome with the highest fitness is selected,
-and $N_{\text{eval}} = G \cdot P \cdot T_{\text{gen}}$ (total genomes
-evaluated) is logged so the multiple-testing burden can be reported.
+% We deploy an XGBoost model with GPU-accelerated histogram tree construction on each of $G$ GPUs. Each GPU is allocated a 64-bit feature genome, i.e.\ a fixed budget of 64 binary slots, and a genetic algorithm (GA) evolves which features from a predefined candidate library occupy those slots. The GA searches over the \emph{feature subsets} rather than evolving formulas and selects which to mutate. The candidate features themselves and their bit allocations are shown in Table~\ref{tab:genome}. The pipeline has four stages: (1)~genome encoding, (2)~fused GPU fitness evaluation, (3)~evolution, and
+% (4)~XGBoost training and signal generation.
 
-\paragraph{Stage 4: XGBoost training and signal generation.}
-The selected feature subset is passed to a gradient-boosted tree model,
-\begin{equation}
-    \hat{y}_{i,t} = \sum_{m=1}^{M} \eta\, T_m\!\left(\mathbf{x}^{(M^\ast)}_{i,t}\right),
-\end{equation}
-trained with the XGBoost GPU histogram algorithm using shallow trees
-(\texttt{max\_depth} $\in [3,6]$), subsampling, L1/L2 regularization, and
-early stopping on a validation block. The target is [the $h$-step forward
-return / its sign]. Predictions are converted into positions after
-volatility scaling, and transaction costs of 2--5\,bps per trade are
-deducted in all reported performance metrics.
+% % change table once features are decided
+% \begin{table}[t]
+% \centering
+% \caption{Candidate features and genome bit allocation.}
+% \label{tab:genome}
+% \small
+% \begin{tabular}{@{}lc@{}}
+% \toprule
+% \textbf{Candidate features} & \textbf{Bits} \\
+% \midrule
+% Returns / momentum (8 features, TBD)      & 8 \\
+% Volatility (8 features, TBD)              & 8 \\
+% Volume / trade flow (8 features, TBD)     & 8 \\
+% Order-book imbalance (8 features, TBD)    & 8 \\
+% Spread / liquidity (8 features, TBD)      & 8 \\
+% Mean reversion (8 features, TBD)          & 8 \\
+% Time / calendar (8 features, TBD)         & 8 \\
+% Macro, FRED (8 features, TBD)             & 8 \\
+% \midrule
+% \textbf{Total (X bits)}              & \textbf{64} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% \paragraph{Stage 1: Genome encoding.}
+% Each individual is a genome $b \in \{0,1\}^{64}$ stored as a single
+% \texttt{uint64}, which indexes a mask over $F = 64$ candidate features:
+% \begin{equation}
+%     M_j = b_j, \qquad \mathbf{x}^{(M)}_{i,t} = \left(x_{i,t,j}\right)_{j:\,M_j = 1},
+% \end{equation}
+% where $x_{i,t,j}$ is feature $j$ for asset $i$ at time $t$. The genome is
+% partitioned into 8 bytes, which serve as the unit of mutation and crossover.
+% The search space has size $2^{64}$, so exhaustive evaluation is infeasible
+% and a heuristic search is warranted.
+
+% \paragraph{Stage 2: Fused GPU fitness evaluation.}
+% Fitness is evaluated by a fused Triton kernel that keeps the feature tensor
+% resident in GPU memory. In a single pass it computes, over the training
+% window only, (a)~each feature's rolling information coefficient with the
+% forward return
+% $\mathrm{IC}_j = \mathrm{corr}(x_{\cdot,\cdot,j},\, r_{t \to t+h})$,
+% (b)~the pairwise feature correlation matrix $C \in \mathbb{R}^{64 \times 64}$,
+% and (c)~a mutual-information estimate between each feature and the target.
+% Given a genome with active set $S = \{j : M_j = 1\}$, fitness is
+% \begin{equation}
+%     \mathcal{F}(b) \;=\; \underbrace{\frac{1}{|S|}\sum_{j \in S} \left|\mathrm{IC}_j\right|}_{\text{signal quality}}
+%     \;-\; \lambda_1 \left|S\right|
+%     \;-\; \lambda_2 \underbrace{\frac{1}{|S|(|S|-1)}\sum_{\substack{j,k \in S\\ j \neq k}} \left|C_{jk}\right|}_{\text{redundancy}},
+% \end{equation}
+% where $\lambda_1$ penalizes subset size and $\lambda_2$ penalizes mean
+% pairwise correlation. Because $C$ is computed once per window, scoring a
+% genome reduces to indexing into precomputed quantities, so an entire
+% population can be evaluated in parallel with negligible marginal cost.
+
+% \paragraph{Stage 3: Evolution.}
+% Each generation applies the following operators to the population:
+% \begin{itemize}
+%     \item \textbf{Selection:} tournament selection of size $[k]$ on $\mathcal{F}$,
+%     with elitism preserving the top $[e]$ genomes.
+%     \item \textbf{Crossover:} uniform byte-wise crossover, where each of the
+%     8 child bytes is inherited from one parent chosen with probability $0.5$.
+%     \item \textbf{Mutation:} each byte is mutated independently with
+%     probability $p_{\text{byte}}$ by XOR with a random byte, which is
+%     equivalent to flipping a random subset of that byte's bits.
+%     $p_{\text{byte}}$ is set so the expected per-bit flip rate lies in
+%     $[1\%, 5\%]$.
+% \end{itemize}
+% Populations evolve independently on each GPU and exchange their best
+% genomes every $[m]$ generations, following an island model. At the end of
+% the search on each window, the genome with the highest fitness is selected,
+% and $N_{\text{eval}} = G \cdot P \cdot T_{\text{gen}}$ (total genomes
+% evaluated) is logged so the multiple-testing burden can be reported.
+
+% \paragraph{Stage 4: XGBoost training and signal generation.}
+% The selected feature subset is passed to a gradient-boosted tree model,
+% \begin{equation}
+%     \hat{y}_{i,t} = \sum_{m=1}^{M} \eta\, T_m\!\left(\mathbf{x}^{(M^\ast)}_{i,t}\right),
+% \end{equation}
+% trained with the XGBoost GPU histogram algorithm using shallow trees
+% (\texttt{max\_depth} $\in [3,6]$), subsampling, L1/L2 regularization, and
+% early stopping on a validation block. The target is [the $h$-step forward
+% return / its sign]. Predictions are converted into positions after
+% volatility scaling, and transaction costs of 2--5\,bps per trade are
+% deducted in all reported performance metrics.
 
 
 \subsection{Adaptive Re-Evolution and Validation}
-To address non-stationarity, the GA is re-run on each rolling window, so the
-active feature set can change as regimes shift. Selection, fitness
+To address non-stationarity, the GA is re-run on each rolling window, so the active feature set can change as regimes shift. Selection, fitness
 evaluation, and model fitting are performed strictly inside a purged
 walk-forward scheme: for each fold, evolution and training use data in
 $[t_0, t_1)$, and testing uses $[t_1 + e, t_2)$ with an embargo $e \ge h$
@@ -245,136 +311,83 @@ or genome selection. We additionally report [a static-feature XGBoost
 baseline, and a random-subset baseline with the same feature count] to
 isolate the contribution of the evolutionary search.
 
-\subsection{Backtesting}
-For an event-ordered schema, we utilize NautilusTrader~\cite{nautilus} for
-backtesting, which provides an open-source, event-driven simulation engine
-that replays recorded market data in timestamp order and routes strategy
-orders through a simulated exchange. Because MBP-10 data is a stream of
-order-book events rather than fixed-interval bars, an event-driven engine
-lets the strategy react to each book update in the order it occurred,
-instead of to aggregated bars that hide intra-bar ordering. This also
-helps prevent look-ahead bias, since the strategy only observes data with
-timestamps at or before the current simulation time.
-
-\paragraph{Data and venue configuration.}
-Databento MBP-10 data are converted to Parquet and loaded into a
-NautilusTrader data catalog as \texttt{OrderBookDepth10} records for the
-ESH4 contract on the \texttt{GLBX} venue. The simulated venue uses an L2
-(market-by-price) book, a netting order-management system (one net
-position per instrument), and a margin account with \$1{,}000{,}000
-starting capital in USD.
-
-\paragraph{Order simulation.}
-Strategy orders are matched against the recorded depth at the time they
-reach the simulated exchange, so spread crossing and depth-based slippage
-are embedded in fills. The engine does not model our queue position or the
-impact of our orders on subsequent book updates; passive-order fills and
-impact beyond displayed depth are therefore not captured. [Latency:
-orders are submitted with an assumed delay of $L=[\,]$.] Exchange and
-brokerage fees of \$2.00 per contract per fill are deducted after the
-simulation, so Nautilus's native statistics are gross of fees and all
-reported headline metrics are computed net of fees by our own pipeline.
-
-\paragraph{Separation of training and testing.}
-All feature selection (GA) and model fitting (XGBoost) are performed
-outside the engine on in-sample days only. NautilusTrader is used solely
-to replay the frozen strategy on the out-of-sample window, which is run
-once, with no tuning. The same day-splitting routine is used in training
-and backtesting, and an embargo of [5] minutes separates the two periods.
-When requested, the in-sample window is replayed through the same engine
-so that in-sample and out-of-sample results are measured under identical
-execution assumptions.
-
-\paragraph{Outputs.}
-The engine's account and fill reports are aggregated into daily and
-[intraday] returns, from which we compute annualized return, volatility,
-Sharpe ratio, maximum drawdown, and turnover, plus an equity curve and
-NautilusTrader's interactive tearsheet.
-
-\subsection{Signal Construction}
-The signal is the output of the frozen genetic-algorithm-plus-XGBoost
-pipeline. The GA and the XGBoost model are fit exclusively on in-sample
-trading days; the selected genome $b^\ast$ (the active feature subset) and
-the tree ensemble are then held fixed for the entire out-of-sample (OOS)
-window. At each decision time $t$, the strategy reads the latest ten-level
-order-book snapshot, computes the features active in $b^\ast$, and evaluates
-the model:
-\begin{equation}
-    s_t = \hat{y}_t = f\!\left(\mathbf{x}^{(b^\ast)}_t\right),
-\end{equation}
-where $\hat{y}_t$ is the predicted forward mid-price return, in basis
-points, over a horizon of $h=[\,]$ seconds. Features are computed
-causally from information available at or before $t$, using the same
-feature code as in training.
+\subsection{Strategy}
+The \emph{model} (features, XGBoost, GA) produces a frozen rule. The
+\emph{strategy} below converts that rule into orders. Everything it needs
+(feature mask, threshold, standardization constants, model weights) is stored
+in one frozen bundle written from in-sample data and is not updated during
+the OOS replay.
  
-\subsection{Portfolio Construction}
-% Ranking/z-scoring, long-short vs long-only, weighting scheme, rebalance frequency,
-% neutralization (sector, beta, size).
-The portfolio consists of a single instrument, the March 2024 E-mini S\&P~500
-future (ESH4), traded on a netting account, so the book holds one net
-position that is long, short, or flat. No cross-sectional ranking or
-neutralization is applied. The signal determines direction: long when
-$s_t > \theta$, short when $s_t < -\theta$, and no change otherwise, where
-$\theta=[\,]$ is a no-trade threshold set above the expected cost of a round
-trip.
-
-Target positions are scaled by recent volatility and capped,
+\subsubsection{Signal Construction}
+At every ten-level book update $t$, the strategy computes the snapshot features
+$\mathbf{x}_t$ with the same code path as in training, runs the XGBoost model
+when the score column is active, standardizes the active columns, and forms
 \begin{equation}
-    n^\ast_t = \mathrm{round}\!\left(\mathrm{clip}\!\left(\kappa\,
-    \frac{s_t}{\hat{\sigma}_t},\,-n_{\max},\,n_{\max}\right)\right),
+    S_t = \sum_{j\in\mathcal{S}} z_{t,j}.
 \end{equation}
-where $\hat{\sigma}_t$ is the rolling standard deviation of $h$-second
-mid-price returns over the previous [$w$] seconds, $\kappa=[\,]$, and
-$n_{\max}=[\,]$ contracts [alternatively: a fixed size of one contract].
-One ES contract has a \$50 index multiplier; at an index level near [4{,}800]
-this is roughly [\$240{,}000] of notional per contract against \$1{,}000{,}000
-of starting capital, so the position cap implies a maximum leverage of
-[$n_{\max}\times 0.24$].
-
-\subsection{Position Sizing}
-Target positions are scaled by recent volatility and capped,
-\begin{equation}
-    n^\ast_t = \mathrm{round}\!\left(\mathrm{clip}\!\left(\kappa\,
-    \frac{s_t}{\hat{\sigma}_t},\,-n_{\max},\,n_{\max}\right)\right),
-\end{equation}
-where $\hat{\sigma}_t$ is the rolling standard deviation of $h$-second
-mid-price returns over the previous [$w$] seconds, $\kappa=[\,]$, and
-$n_{\max}=[\,]$ contracts [alternatively: a fixed size of one contract].
-One ES contract has a \$50 index multiplier; at an index level near [4{,}800]
-this is roughly [\$240{,}000] of notional per contract against \$1{,}000{,}000
-of starting capital, so the position cap implies a maximum leverage of
-[$n_{\max}\times 0.24$].
-
-\subsection{Rebalancing Frequency}
-Targets are re-evaluated every [$k$ seconds / on each book update]. A trade
-is sent only if the change in target position is at least [1] contract and
-the threshold condition above holds. The feature set and model weights are
-\emph{not} updated during the OOS window. All positions are closed at the
-end of the window [and before the daily maintenance break].
-
-\subsection{Execution Assumptions}
-Out-of-sample performance is measured by replaying recorded ten-level order book data through NautilusTrader's backtest engine, using an L2 book, a netting order-management system, and a margin account with \$1{,}000{,}000 starting capital. The model is replayed once on the OOS window, with no tuning. Orders are [marketable / aggressive limit] orders submitted at $t+L$, with latency $L=[\,]$, and are filled against the displayed depth at that moment, consuming successive price levels until filled, so spread
-crossing and depth-based slippage are embedded in the simulated fills.
-The simulator does not model our queue position or the effect of our
-orders on later book updates, so passive-order fills and market impact
-beyond displayed depth are not captured. Exchange and brokerage fees of
-\$2.00 per contract per fill are deducted after the simulation. The first
-[5] minutes of the OOS window are excluded (embargo) so that no training
-label overlaps the test period.
+The strategy waits for a warm-up of $\max(L,\,1001)$ updates, where $L$ is the
+GA lookback and 1001 fills the rolling OFI window.
+ 
+\subsubsection{Portfolio Construction}
+The portfolio holds one instrument (ESH4) and is long, short, or flat. The
+target direction is $+1$ if $S_t>\tau$, $-1$ if $S_t<-\tau$, and no trade
+otherwise. Entries are allowed only from a flat position, so exposure never
+stacks and holding periods never overlap. No cross-sectional ranking or
+neutralization applies. The strategy is flat before the CME daily maintenance
+break and at the end of the window, so it holds nothing overnight.
+ 
+\subsubsection{Position Sizing}
+Each entry trades a fixed $n=[1]$ contract regardless of $|S_t|$, which keeps
+the test about the predictive content of the signal and not about sizing. One
+ES contract has a \$50 index multiplier; at an index level near [4{,}800] a
+position is roughly [\$240{,}000] of notional, about [0.24$\times$] leverage
+on the \$1{,}000{,}000 account.
+ 
+\subsubsection{Rebalancing Frequency}
+The strategy is event-driven: features and exit conditions are updated at every
+book snapshot, with no time bars. Entries are throttled by a minimum interval
+of [500]\,ms between orders and a cooldown of [500]\,ms after each exit. A
+position is closed after a fixed holding period $h=[\,]$\,ms, set to the median
+wall-clock duration of the label horizon measured in-sample, and is closed
+early when the maintenance-break window (16:55--18:05 ET) begins. Exit
+conditions are checked at each book update. The feature set, threshold, and
+model are not changed during the OOS period.
+ 
+\subsubsection{Execution Assumptions}
+Entries and exits are market orders, filled against the displayed depth when
+they reach the simulated venue, so spread crossing and depth-based slippage are
+embedded in the fills. Orders reach the venue after an assumed latency of
+$[\,]$\,ms; Section~\ref{sec:results} reports results for several values.
+Passive orders are not simulated, because historical data cannot reveal queue
+position, and our own market impact on later book updates is not modeled.
+Exchange and brokerage fees of \$2.00 per contract per fill are deducted after
+the simulation.
  
 \subsection{Backtest Design}
-% In-sample / out-of-sample split, walk-forward, parameter selection,
-% transaction cost assumptions, execution timing (e.g., signal at close, trade next open).
-\begin{itemize}
-    \item Training period: \dots \quad Out-of-sample period: \dots
-    \item Rebalance frequency: \dots
-    \item Transaction costs: \dots bps per side \quad Slippage model: \dots
-    \item Execution assumption: \dots
-\end{itemize}
+We use NautilusTrader~\cite{nautilus}, an open-source event-driven engine that
+replays recorded data in timestamp order, so the strategy sees only
+information stamped at or before the current simulation time. Databento
+\texttt{mbp-10} records are loaded as ten-level depth snapshots on an L2
+market-by-price book, with a netting account and \$1{,}000{,}000 of starting
+capital. All fitting and tuning happen outside the engine on in-sample days;
+the engine replays the frozen strategy over the OOS window once. The
+in-sample window is replayed through the same engine only to measure the
+in-sample/out-of-sample gap under identical assumptions. Nautilus's native
+statistics and tearsheet are gross of our per-fill fee, so headline metrics come
+from our own net calculation. Daily returns are built from realized balance, so
+intraday drawdowns are not visible; we therefore also report per-trade
+statistics.
+
+
+
  
 % ============================================================
 \section{Results}
 % ============================================================
+The engine's account and fill reports are aggregated into daily and
+[intraday] returns, from which we compute annualized return, volatility,
+Sharpe ratio, maximum drawdown, and turnover, plus an equity curve and
+NautilusTrader's interactive tearsheet.
 \subsection{Performance Summary}
 \begin{table}[H]
 \centering
@@ -493,6 +506,12 @@ Overfitting and Non-Normality,''
 \textit{Journal of Portfolio Management}, vol.~40, no.~5,
 pp.~94--107, 2014.
 \url{https://doi.org/10.3905/jpm.2014.40.5.094}
+
+
+
+\bibitem{Databento}
+Databento. (2026). GLBX.MDP3: CME Globex market data, MBP-10 schema. Databento.
+\url{https://databento.com/catalog/cme/GLBX.MDP3}
 
 
 \end{thebibliography}
