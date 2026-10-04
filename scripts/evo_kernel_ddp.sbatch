@@ -30,7 +30,7 @@ export NCCL_SOCKET_IFNAME='=bond0'
 export NCCL_NET_MERGE_LEVEL=LOC
 # Execute the driver script
 echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
-uv run python python/model/distributed_ga.py
+uv run python -m python.model.distributed_ga
 
 test -s data/ga_outputs/best_strategy.json
 test -s data/ga_outputs/fitness_history.csv
