@@ -15,6 +15,7 @@ class MicrostructureXGBTrainer:
         target_horizon_events: int = 100, # e.g., 100 events ahead
         fee_threshold_bps: float = 1.5, # 1.5 bps fee barrier
         xgb_params: dict[str, object] | None = None,
+        directional_class_weight: float = 5.0,
         num_boost_round: int = 800,
         early_stopping_rounds: int = 40,
     ):
@@ -24,6 +25,9 @@ class MicrostructureXGBTrainer:
         
         self.target_horizon = target_horizon_events
         self.fee_threshold = fee_threshold_bps / 10000.0  # Convert bps to decimal
+        if directional_class_weight < 1:
+            raise ValueError("directional_class_weight must be at least 1.")
+        self.directional_class_weight = directional_class_weight
         self.xgb_params = xgb_params or {
             "tree_method": "hist",
             "device": "cuda",
@@ -37,6 +41,15 @@ class MicrostructureXGBTrainer:
         }
         self.num_boost_round = num_boost_round
         self.early_stopping_rounds = early_stopping_rounds
+
+    def _sample_weights(self, y: np.ndarray) -> np.ndarray:
+        """Increase loss for directional classes while leaving flat unchanged."""
+        directional = (y == 0) | (y == 2)
+        return np.where(
+            directional,
+            self.directional_class_weight,
+            1.0,
+        ).astype(np.float32)
 
     def load_and_label_data(
         self,
@@ -138,8 +151,16 @@ class MicrostructureXGBTrainer:
                 f"Val Range: [{val_start:,} : {val_end:,}]"
             )
 
-            dtrain = xgb.DMatrix(X_train, label=y_train)
-            dval = xgb.DMatrix(X_val, label=y_val)
+            dtrain = xgb.DMatrix(
+                X_train,
+                label=y_train,
+                weight=self._sample_weights(y_train),
+            )
+            dval = xgb.DMatrix(
+                X_val,
+                label=y_val,
+                weight=self._sample_weights(y_val),
+            )
 
             model = xgb.train(
                 self.xgb_params,
@@ -193,6 +214,7 @@ if __name__ == "__main__":
         output_bin_dir=str(xgb_config.output_dir),
         target_horizon_events=xgb_config.target_horizon_events,
         fee_threshold_bps=xgb_config.fee_threshold_bps,
+        directional_class_weight=xgb_config.directional_class_weight,
         xgb_params={
             "tree_method": xgb_config.tree_method,
             "device": xgb_config.device,
@@ -220,7 +242,7 @@ if __name__ == "__main__":
 
     final_model = xgb.train(
         trainer.xgb_params,
-        xgb.DMatrix(X, label=y),
+        xgb.DMatrix(X, label=y, weight=trainer._sample_weights(y)),
         num_boost_round=trainer.num_boost_round,
     )
     xgb_config.model_path.parent.mkdir(parents=True, exist_ok=True)
