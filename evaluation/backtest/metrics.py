@@ -28,7 +28,7 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from evaluation.split_sample import Split, add_trading_day, SampleSplitter
+from evaluation.backtest.split_sample import Split, add_trading_day, SampleSplitter
 
 TRADING_DAYS = 252
 

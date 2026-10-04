@@ -46,8 +46,8 @@ from nautilus_trader.model import InstrumentId, Venue
 from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
-from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
-from split_sample import SampleSplitter, add_trading_day, trading_day_window
+from evaluation.backtest.metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
+from evaluation.backtest.split_sample import SampleSplitter, add_trading_day, trading_day_window
 
 CATALOG_DIR = os.environ.get("CATALOG_DIR", "catalog")
 INSTRUMENT_ID = os.environ.get("INSTRUMENT_ID", "ESH4.GLBX")
