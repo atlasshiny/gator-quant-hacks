@@ -130,6 +130,7 @@ desktop.ini
 
 # Custom Exclusion
 /data
+/output
 
 #cache
 /.massive_cache
