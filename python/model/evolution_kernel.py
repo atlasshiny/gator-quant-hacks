@@ -76,7 +76,7 @@ def evolution_kernel_grid(
         active_mask = mask & (sample_offsets >= lookback_decoded)
 
         selected_features = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
-        for feature_idx in range(28):
+        for feature_idx in range(25):
             feature = tl.load(
                 X_ptr + (sample_offsets * stride_sample) + feature_idx,
                 mask=mask,
@@ -85,15 +85,32 @@ def evolution_kernel_grid(
             selected_features += tl.where(
                 ((feat_flags >> feature_idx) & 1) != 0, feature, 0.0
             )
+        p_short = tl.load(X_ptr + (sample_offsets * stride_sample) + 25, mask=mask, other=0.0)
+        p_flat = tl.load(X_ptr + (sample_offsets * stride_sample) + 26, mask=mask, other=0.0)
+        p_long = tl.load(X_ptr + (sample_offsets * stride_sample) + 27, mask=mask, other=0.0)
+        short_selected = ((feat_flags >> 25) & 1) != 0
+        flat_selected = ((feat_flags >> 26) & 1) != 0
+        long_selected = ((feat_flags >> 27) & 1) != 0
+        direction_score = tl.where(long_selected, p_long, 0.0) - tl.where(
+            short_selected, p_short, 0.0
+        )
+        flat_bias = tl.where(flat_selected, p_flat, 0.0)
 
         ret = tl.load(returns_ptr + sample_offsets, mask=mask, other=0.0)
 
-        has_features = feat_flags != 0
-        long_cond = has_features & (selected_features > z_trigger)
+        has_features = (feat_flags & ((1 << 25) - 1)) != 0
+        directional_condition = (direction_score > flat_bias) | (direction_score < -flat_bias)
+        long_cond = has_features & (tl.abs(selected_features) > z_trigger) & directional_condition
+        long_signal = long_cond & (direction_score > flat_bias)
+        short_signal = long_cond & (direction_score < -flat_bias)
         signal = tl.where(
-            active_mask & long_cond,
+            active_mask & long_signal,
             tl.where(vol_target > 0.0, vol_target, 1.0),
-            0.0,
+            tl.where(
+                active_mask & short_signal,
+                -tl.where(vol_target > 0.0, vol_target, 1.0),
+                0.0,
+            ),
         )
         # Approximate turnover friction within the block. Recompute the
         # previous lane's signal for intra-block transitions; lane zero is
@@ -102,7 +119,7 @@ def evolution_kernel_grid(
         previous_mask = mask & (sample_offsets > start_sample)
         previous_active = previous_mask & (previous_offsets >= lookback_decoded)
         previous_features = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
-        for feature_idx in range(28):
+        for feature_idx in range(25):
             previous_feature = tl.load(
                 X_ptr + (previous_offsets * stride_sample) + feature_idx,
                 mask=previous_mask,
@@ -113,11 +130,43 @@ def evolution_kernel_grid(
                 previous_feature,
                 0.0,
             )
-        previous_long_cond = has_features & (previous_features > z_trigger)
+        previous_p_short = tl.load(
+            X_ptr + (previous_offsets * stride_sample) + 25,
+            mask=previous_mask,
+            other=0.0,
+        )
+        previous_p_flat = tl.load(
+            X_ptr + (previous_offsets * stride_sample) + 26,
+            mask=previous_mask,
+            other=0.0,
+        )
+        previous_p_long = tl.load(
+            X_ptr + (previous_offsets * stride_sample) + 27,
+            mask=previous_mask,
+            other=0.0,
+        )
+        previous_direction = tl.where(long_selected, previous_p_long, 0.0) - tl.where(
+            short_selected, previous_p_short, 0.0
+        )
+        previous_flat_bias = tl.where(flat_selected, previous_p_flat, 0.0)
+        previous_directional = (previous_direction > previous_flat_bias) | (
+            previous_direction < -previous_flat_bias
+        )
+        previous_active_cond = (
+            has_features
+            & (tl.abs(previous_features) > z_trigger)
+            & previous_directional
+        )
+        previous_long_cond = previous_active_cond & (previous_direction > previous_flat_bias)
+        previous_short_cond = previous_active_cond & (previous_direction < -previous_flat_bias)
         previous_signal = tl.where(
             previous_active & previous_long_cond,
             tl.where(vol_target > 0.0, vol_target, 1.0),
-            0.0,
+            tl.where(
+                previous_active & previous_short_cond,
+                -tl.where(vol_target > 0.0, vol_target, 1.0),
+                0.0,
+            ),
         )
         turnover = tl.abs(signal - previous_signal)
         net_pnl = (signal * ret) - (turnover * FRICTION_BPS)

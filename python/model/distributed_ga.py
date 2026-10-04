@@ -94,15 +94,30 @@ def _signals_for_chromosome(
         dtype=torch.bool,
         device=data_gpu.device,
     )
-    selected_features = data_gpu[:, : len(feature_flags)][:, feature_mask].sum(dim=1)
+    if data_gpu.shape[1] != 28 or len(feature_flags) != 28:
+        raise ValueError("Three-class GA validation requires exactly 28 input columns.")
+    base_mask = feature_mask[:25]
+    selected_features = data_gpu[:, :25][:, base_mask].sum(dim=1)
+    p_short = torch.where(feature_mask[25], data_gpu[:, 25], torch.zeros_like(selected_features))
+    p_flat = torch.where(feature_mask[26], data_gpu[:, 26], torch.zeros_like(selected_features))
+    p_long = torch.where(feature_mask[27], data_gpu[:, 27], torch.zeros_like(selected_features))
+    direction_score = p_long - p_short
+    flat_bias = p_flat
     sample_index = torch.arange(data_gpu.shape[0], device=data_gpu.device)
     active = sample_index >= decoded["lookback_window"]
-    long_condition = selected_features > (decoded["threshold_param"] / 1000.0)
+    feature_condition = selected_features.abs() > (decoded["threshold_param"] / 1000.0)
+    long_condition = feature_condition & (direction_score > flat_bias)
+    short_condition = feature_condition & (direction_score < -flat_bias)
     signal_size = decoded["risk_param"] / 1000.0
+    size = max(signal_size, 1.0)
     return torch.where(
-        active & long_condition & (feature_mask.any()),
-        torch.full_like(selected_features, max(signal_size, 1.0)),
-        torch.zeros_like(selected_features),
+        active & long_condition,
+        torch.full_like(selected_features, size),
+        torch.where(
+            active & short_condition,
+            torch.full_like(selected_features, -size),
+            torch.zeros_like(selected_features),
+        ),
     )
 
 
