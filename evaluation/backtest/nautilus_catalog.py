@@ -69,7 +69,7 @@ def build_catalog(
     instrument_id = InstrumentId.from_str(INSTRUMENT_ID)
     for f in depth_files:
         depth = loader.load_order_book_depth10(filepath=str(f), instrument_id=instrument_id)
-        catalog.write_data(depth)
+        catalog.write_order_book_depths(depth)
         print(f"Wrote {len(depth):,} OrderBookDepth10 from {f.name}")
 
     print(f"\nCatalog ready at {CATALOG_DIR.resolve()}")
@@ -78,4 +78,5 @@ def build_catalog(
 
 
 if __name__ == "__main__":
+    print(f"PUBLISHERS_JSON={PUBLISHERS_JSON}")
     build_catalog()
