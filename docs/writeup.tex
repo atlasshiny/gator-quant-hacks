@@ -98,7 +98,7 @@ Risk & 12 & Position scaling parameter \\
 \end{tabular}
 \end{table}
  
-\paragraph{Rule and fitness.} Standardized signals form $S_i = \sum_{j\in\mathcal{S}_b} z_{i,j}$, yielding positions $p_i \in \{+1, -1, 0\}$. A fused Triton kernel~\cite{tillet2019triton} evaluates populations in GPU memory, maximizing a skew-penalized Sharpe score $\mathcal{F}(b)$.
+\paragraph{Rule and fitness.} Standardized signals form $S_i = \sum_{j\in\mathcal{S}_b} z_{i,j}$, yielding positions $p_i \in \{+1, -1, 0\}$. A fused Triton kernel evaluates populations in GPU memory, maximizing a skew-penalized Sharpe score $\mathcal{F}(b)$.
  
 \paragraph{Evolution.} Populations evolve across GPU islands using elitism, crossover, and mutation, with periodic elite migration.
  
