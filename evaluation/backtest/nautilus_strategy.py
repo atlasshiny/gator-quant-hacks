@@ -74,10 +74,13 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import xgboost as xgb
+import polars as pl
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model import InstrumentId, OrderBookDepth10, OrderSide
 from nautilus_trader.trading import Strategy
+
+GA_PROBABILITY_FEATURES = ("xgb_p_short", "xgb_p_flat", "xgb_p_long")
 
 try:
     from python.es_risk_manager import (
@@ -217,10 +220,16 @@ def _top_of_book(depth: OrderBookDepth10) -> Book | None:
                 _f(bids[0].size), _f(asks[0].size))
 
 
-class XGBBookStateConfig(StrategyConfig, frozen=True):
+import os
+_REPO = os.environ.get("REPO", ".")
+class XGBBookStateConfig(StrategyConfig):
     instrument_id: InstrumentId
-    bundle_path: str = "data/ga_inputs/frozen_bundle.json"
-    model_path: str = "data/ga_inputs/xgboost_final.json"
+    bundle_path: str = os.environ.get(
+        "BUNDLE_PATH", f"{_REPO}/output/ga_results_january/frozen_bundle.json")
+    model_path: str = os.environ.get(
+        "MODEL_PATH", f"{_REPO}/output/models/xgboost_january.json")
+    event_features_path: str = os.environ.get(
+        "EVENT_FEATURES_PATH", f"{_REPO}/output/features/stationary_features_january.parquet")
     trade_size: int = 1              # contracts per entry (risk manager can only block)
     holding_ms: int = 1500           # exit horizon h (match the label horizon!)
     min_interval_ms: int = 500       # min gap between entries
@@ -244,6 +253,7 @@ class XGBBookStateStrategy(Strategy):
         self._engine = BookFeatureEngine()
         self._model: xgb.Booster | None = None
         self._last_probs: tuple[float, float, float] | None = None
+        self._event_features: dict[str, np.ndarray] = {}
 
         # position / order state
         self._pos = 0.0
@@ -308,16 +318,38 @@ class XGBBookStateStrategy(Strategy):
                            if "xgb_score" in self._names else None)
         if not self._mask.any():
             raise ValueError("GA mask selects no features.")
-        bad = [n for n in self._xgb_names if n not in SNAPSHOT_FEATURES]
+        bad = [n for n in self._xgb_names
+               if n not in SNAPSHOT_FEATURES and n not in EVENT_ONLY_FEATURES]
         if bad:
-            raise ValueError(f"XGBoost inputs not computable from snapshots: {bad}")
-        allowed = set(SNAPSHOT_FEATURES) | {"xgb_score"}
+            raise ValueError(f"Unsupported XGBoost inputs: {bad}")
+        allowed = set(SNAPSHOT_FEATURES) | set(EVENT_ONLY_FEATURES) | {
+            "xgb_score", *GA_PROBABILITY_FEATURES
+        }
         bad = [n for j, n in enumerate(self._names)
                if self._mask[j] and n not in allowed]
         if bad:
             raise ValueError(f"GA selected columns not servable (pad or event-only): {bad}")
 
-        if self._score_idx is not None and self._mask[self._score_idx]:
+        needs_event = (
+            any(n in EVENT_ONLY_FEATURES for n in self._xgb_names)
+            or any(self._mask[j] and self._names[j] in EVENT_ONLY_FEATURES
+                   for j in range(28))
+        )
+        if needs_event:
+            path = Path(self.config.event_features_path)
+            if not path.is_file():
+                raise FileNotFoundError(f"Event feature Parquet not found: {path}")
+            columns = ["ts_event", *EVENT_ONLY_FEATURES]
+            frame = pl.read_parquet(path, columns=columns)
+            self._event_features = {
+                name: frame[name].to_numpy().astype(np.float32, copy=False)
+                for name in EVENT_ONLY_FEATURES
+            }
+        if (
+            (self._score_idx is not None and self._mask[self._score_idx])
+            or any(self._mask[j] and self._names[j] in GA_PROBABILITY_FEATURES
+                   for j in range(28))
+        ):
             self._model = xgb.Booster()
             self._model.load_model(self.config.model_path)
             self._model.set_param({"device": "cpu"})
@@ -355,16 +387,33 @@ class XGBBookStateStrategy(Strategy):
         z = np.zeros(28)
         xgb_score = float("nan")
         self._last_probs = None
+        ready_index = self._n_ready - 1
+        if self._event_features:
+            if ready_index >= len(next(iter(self._event_features.values()))):
+                raise IndexError("Event feature Parquet is shorter than replayed data.")
+            feats = {
+                **feats,
+                **{
+                    name: float(values[ready_index])
+                    for name, values in self._event_features.items()
+                },
+            }
+        probs: tuple[float, float, float] | None = None
         for j in range(28):
             if not self._mask[j]:
                 continue
-            if j == self._score_idx:
+            if j == self._score_idx or self._names[j] in GA_PROBABILITY_FEATURES:
                 x = np.array([[feats[n] for n in self._xgb_names]], dtype=np.float32)
-                # classes: 0 = sell (-1), 1 = hold (0), 2 = buy (+1)
-                p = self._model.predict(xgb.DMatrix(x))[0]
-                self._last_probs = (float(p[0]), float(p[1]), float(p[2]))
-                xgb_score = float(p[2] - p[0])
-                raw = xgb_score
+                if probs is None:
+                    p = self._model.predict(xgb.DMatrix(x))[0]
+                    probs = (float(p[0]), float(p[1]), float(p[2]))
+                    self._last_probs = probs
+                    xgb_score = probs[2] - probs[0]
+                raw = xgb_score if self._names[j] == "xgb_score" else {
+                    "xgb_p_short": probs[0],
+                    "xgb_p_flat": probs[1],
+                    "xgb_p_long": probs[2],
+                }[self._names[j]]
             else:
                 raw = feats[self._names[j]]
             z[j] = (raw - self._mean[j]) / (self._std[j] + _EPS)
