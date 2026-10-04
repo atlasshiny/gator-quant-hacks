@@ -13,7 +13,7 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
-mkdir -p logs output/features output/ga_inputs output/models
+mkdir -p logs output/features output/ga_inputs output/models output/explainability
 
 module purge
 module load conda cuda/12.8.1
@@ -27,13 +27,22 @@ echo "Feature preparation completed successfully."
 
 uv run python -m python.model.train_xgb
 
+uv run python -m python.model.explain_xgb
+
 test -s output/features/stationary_features.parquet
 test -s output/ga_inputs/features.bin
 test -s output/ga_inputs/returns.bin
 test -s output/models/xgboost_final.json
+test -s output/explainability/shap_summary.png
+test -s output/explainability/shap_summary_short.png
+test -s output/explainability/shap_summary_flat.png
+test -s output/explainability/shap_summary_long.png
+test -s output/explainability/shap_feature_importance.csv
+test -s output/explainability/shap_metadata.json
 
 echo "Feature engineering and XGBoost training completed successfully."
 echo "Stationary features: output/features/stationary_features.parquet"
 echo "GA features: output/ga_inputs/features.bin"
 echo "GA returns: output/ga_inputs/returns.bin"
 echo "XGBoost model: output/models/xgboost_final.json"
+echo "SHAP summary: output/explainability/shap_summary.png"
