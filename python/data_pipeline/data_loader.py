@@ -106,38 +106,54 @@ class RawDatabentoUnifier:
 
         print(f"Scanning and unifying Parquet files in {self.parquet_dir}...")
         start_time = time.perf_counter()
-        # Stream each file in bounded batches so the full dataset does not need
-        # to fit in RAM before it can be written.
+        # Sort only overlapping files together. A global sort over all daily
+        # files can materialize the entire dataset and exceed the job limit.
+        overlap_groups: list[list[tuple[Path, object, object, int]]] = []
+        for file_range in file_ranges:
+            group_end = (
+                max(item[2] for item in overlap_groups[-1])
+                if overlap_groups
+                else None
+            )
+            if group_end is None or file_range[1] > group_end:
+                overlap_groups.append([file_range])
+            else:
+                overlap_groups[-1].append(file_range)
+
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         with self.cache_path.open("wb") as cache_file:
-            file_plan = pl.concat(
-                [pl.scan_parquet(str(path)) for path, _, _, _ in file_ranges],
-                how="vertical",
-            ).sort(
-                ["ts_event", "ts_recv", "sequence"],
-                maintain_order=True,
-            )
-            file_plan = (
-                file_plan
-                .with_columns([
-                    pl.col("action").replace_strict(
-                        {"A": 1, "C": 2, "M": 3, "R": 4, "T": 5},
-                        return_dtype=pl.Float32,
-                        default=0,
-                    ),
-                    pl.col("side").replace_strict(
-                        {"A": 1, "B": 2, "N": 0},
-                        return_dtype=pl.Float32,
-                        default=0,
-                    ),
-                ])
-                .select([pl.col(c).cast(pl.Float32) for c in self.all_columns])
-            )
-
             def write_batch(batch: pl.DataFrame) -> None:
                 batch.to_numpy().astype(np.float32).tofile(cache_file)
 
-            file_plan.sink_batches(write_batch, chunk_size=16_384)
+            for group_index, group in enumerate(overlap_groups, start=1):
+                print(
+                    f"Unifying overlap group {group_index}/{len(overlap_groups)} "
+                    f"({len(group)} files)..."
+                )
+                group_plan = pl.concat(
+                    [pl.scan_parquet(str(path)) for path, _, _, _ in group],
+                    how="vertical",
+                ).sort(
+                    ["ts_event", "ts_recv", "sequence"],
+                    maintain_order=True,
+                )
+                group_plan = (
+                    group_plan
+                    .with_columns([
+                        pl.col("action").replace_strict(
+                            {"A": 1, "C": 2, "M": 3, "R": 4, "T": 5},
+                            return_dtype=pl.Float32,
+                            default=0,
+                        ),
+                        pl.col("side").replace_strict(
+                            {"A": 1, "B": 2, "N": 0},
+                            return_dtype=pl.Float32,
+                            default=0,
+                        ),
+                    ])
+                    .select([pl.col(c).cast(pl.Float32) for c in self.all_columns])
+                )
+                group_plan.sink_batches(write_batch, chunk_size=16_384)
 
         matrix = np.memmap(self.cache_path, dtype=np.float32, mode="r")
         matrix = matrix.reshape((-1, self.num_features))
