@@ -150,6 +150,9 @@ def evaluate_population(
     population_bitmasks: np.ndarray,
     n_features: int = 28,
     returns_bin_path: str | None = None,
+    data_gpu: torch.Tensor | None = None,
+    returns_gpu: torch.Tensor | None = None,
+    n_samples: int | None = None,
 ):
     population_bitmasks = np.asarray(population_bitmasks, dtype=np.uint64)
     if population_bitmasks.ndim != 1 or population_bitmasks.size == 0:
@@ -158,22 +161,32 @@ def evaluate_population(
         raise ValueError("n_features must be at least 28 for the feature flag mask.")
     n_population = population_bitmasks.shape[0]
 
-    n_samples = _count_rows_from_binary(data_bin_path, n_features)
+    if data_gpu is None or returns_gpu is None:
+        if returns_bin_path is None:
+            raise ValueError("returns_bin_path must be provided.")
+        n_samples = _count_rows_from_binary(data_bin_path, n_features)
+        n_returns = _count_rows_from_binary(returns_bin_path, 1)
+        if n_returns != n_samples:
+            raise ValueError("Return series length does not match feature matrix length.")
+        data_gpu = load_memmap_tensor(
+            file_path=data_bin_path,
+            dtype=np.float32,
+            shape=(n_samples, n_features),
+            device="cuda",
+        )
+        returns_gpu = load_memmap_tensor(
+            file_path=returns_bin_path,
+            dtype=np.float32,
+            shape=(n_samples,),
+            device="cuda",
+        ).contiguous()
+    elif n_samples is None:
+        n_samples = data_gpu.shape[0]
 
-    X_gpu = load_memmap_tensor(
-        file_path=data_bin_path, dtype=np.float32, shape=(n_samples, n_features), device="cuda"
-    )
-
-    if returns_bin_path is None:
-        raise ValueError("returns_bin_path must be provided.")
-
-    n_returns = _count_rows_from_binary(returns_bin_path, 1)
-    if n_returns != n_samples:
-        raise ValueError("Return series length does not match feature matrix length.")
-
-    returns_gpu = load_memmap_tensor(
-        file_path=returns_bin_path, dtype=np.float32, shape=(n_samples,), device="cuda"
-    ).contiguous()
+    if data_gpu.ndim != 2 or data_gpu.shape[1] < n_features:
+        raise ValueError("Preloaded feature tensor has an incompatible shape.")
+    if returns_gpu.ndim != 1 or returns_gpu.shape[0] != n_samples:
+        raise ValueError("Preloaded return tensor length does not match features.")
 
     bitmasks_gpu = torch.from_numpy(population_bitmasks).to("cuda", non_blocking=True)
     fitness_gpu = torch.empty(n_population, device="cuda", dtype=torch.float32)
@@ -182,8 +195,8 @@ def evaluate_population(
 
     # BLOCK_SIZE is removed here; the autotuner injects it dynamically.
     evolution_kernel_grid[grid](
-        X_gpu, bitmasks_gpu, returns_gpu, fitness_gpu,
-        n_samples, n_features, X_gpu.stride(0),
+        data_gpu, bitmasks_gpu, returns_gpu, fitness_gpu,
+        n_samples, n_features, data_gpu.stride(0),
         SHIFT_FEAT=C_SCHEMA["feature_flags"]["shift"],
         MASK_FEAT=C_SCHEMA["feature_flags"]["mask"],
         SHIFT_LOOK=C_SCHEMA["lookback_window"]["shift"],
