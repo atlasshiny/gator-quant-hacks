@@ -53,6 +53,7 @@ class XGBoostConfig(BaseModel):
     learning_rate: float = Field(gt=0)
     subsample: float = Field(gt=0, le=1)
     colsample_bytree: float = Field(gt=0, le=1)
+    num_class: int = Field(gt=0)
 
 class GeneticAlgorithmConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

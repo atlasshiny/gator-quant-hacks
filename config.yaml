@@ -14,7 +14,7 @@ data:
 
 features:
   stationary_parquet: output/features/stationary_features.parquet
-  expected_base_features: 27
+  expected_base_features: 25
   total_kernel_features: 28
 
 xgboost:
@@ -33,6 +33,7 @@ xgboost:
   learning_rate: 0.03
   subsample: 0.8
   colsample_bytree: 0.8
+  num_class: 3
 
 genetic_algorithm:
   features_path: output/ga_inputs/features.bin
