@@ -38,6 +38,9 @@ def evolution_kernel_grid(
     SHIFT_THRESH: tl.constexpr, MASK_THRESH: tl.constexpr,
     SHIFT_RISK: tl.constexpr, MASK_RISK: tl.constexpr,
     FRICTION_BPS: tl.constexpr,
+    ANNUALIZATION: tl.constexpr,
+    SKEW_PENALTY_MULT: tl.constexpr,
+    KURT_PENALTY_MULT: tl.constexpr,
     BLOCK_SIZE: tl.constexpr, # Now dynamically provided by the autotuner
 ):
     pop_idx = tl.program_id(axis=0)
@@ -131,9 +134,9 @@ def evolution_kernel_grid(
         sum_pnl_3,
         sum_pnl_4,
         total_count,
-        ANNUALIZATION=BacktestConfig.ANNUALIZATION,
-        SKEW_PENALTY_MULT=BacktestConfig.SKEW_PENALTY_MULT,
-        KURT_PENALTY_MULT=BacktestConfig.KURT_PENALTY_MULT,
+        ANNUALIZATION=ANNUALIZATION,
+        SKEW_PENALTY_MULT=SKEW_PENALTY_MULT,
+        KURT_PENALTY_MULT=KURT_PENALTY_MULT,
     )
 
     tl.store(fitness_ptr + pop_idx, final_fitness)
@@ -215,6 +218,9 @@ def evaluate_population(
         SHIFT_RISK=C_SCHEMA["risk_rules"]["shift"],
         MASK_RISK=C_SCHEMA["risk_rules"]["mask"],
         FRICTION_BPS=BacktestConfig.FRICTION_BPS,
+        ANNUALIZATION=BacktestConfig.ANNUALIZATION,
+        SKEW_PENALTY_MULT=BacktestConfig.SKEW_PENALTY_MULT,
+        KURT_PENALTY_MULT=BacktestConfig.KURT_PENALTY_MULT,
     )
 
     return fitness_gpu
