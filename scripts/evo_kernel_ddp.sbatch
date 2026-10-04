@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=16             # Allocate enough CPU cores for fast memmap loading
 #SBATCH --mem=64gb                     # System RAM
 #SBATCH --partition=hpg-b200           # Target the DGX B200 partition
-#SBATCH --gpus=b200:5                  # Request exactly 5 GPUs
+#SBATCH --gpus=b200:2                  # Request exactly 2 GPUs
 #SBATCH --time=01:00:00                # Wall clock time limit (HH:MM:SS)
 
 set -euo pipefail
@@ -33,7 +33,9 @@ echo "Starting PyTorch DDP Evolution on $SLURM_JOB_NODELIST"
 uv run python -m python.model.distributed_ga
 
 test -s output/ga_results/best_strategy.json
+test -s output/ga_results/stage1_survivors.json
 test -s output/ga_results/fitness_history.csv
 echo "GA completed successfully."
 echo "Best strategy: output/ga_results/best_strategy.json"
+echo "Stage 1 survivors: output/ga_results/stage1_survivors.json"
 echo "Fitness history: output/ga_results/fitness_history.csv"
