@@ -469,27 +469,24 @@ Max ADV participation (\%) & \dots & \dots & \dots & \dots \\
 \section{Limitations and Next Steps}
 % ============================================================
 \subsection{Limitations}
-\begin{itemize}
-    \item \textbf{Data:} six months of one instrument, two unadjusted rolls, no queue position in MBP-10.
-    \item \textbf{Overfitting / multiple-testing risk:} about 400{,}000 GA trials on overlapping returns.
-    \item \textbf{Regime dependence:} stress-tested only in a 'calm' market; bursts may not revert under stress.
-    \item \textbf{Execution and cost assumptions:} 1.32-tick round trips; no impact or latency model.
+\begin{itemize}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+    \item \textbf{Data:} trained on one month of ES only, which captures a single market regime; MBP-10 has no queue position.
+    \item \textbf{Search budget:} compute limited the GA to 100 generations, so fitness may not have converged and results may be a local optimum.
+    \item \textbf{Overfitting:} many parameter sets tested on overlapping returns from a short sample, so results may not generalize.
+    \item \textbf{Regime risk:} untested under stress; bursts may not revert in high-volatility markets.
+    \item \textbf{Execution:} assumes 1.32-tick round trips with no impact or latency model.
 \end{itemize}
- 
-\subsection{Next Steps}
-\begin{itemize}
-    \item Hold out a clean test period and fix overlapping fitness.
-    \item Extend to two or more years, including 2022 and August 2024, and test on NQ.
-    \item Use MBO data to simulate passive orders, then paper-trade live in MES contracts.
-\end{itemize}
- 
- 
 
+\subsection{Next Steps}
+\begin{itemize}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+    \item \textbf{More data and generations:} ideally train on 2+ years, including 2022 and Aug.\ 2024, and run the GA until fitness plateaus; test on NQ.
+    \item \textbf{Validation:} hold out a clean test period and fix overlapping fitness.
+    \item \textbf{Execution:} simulate passive fills with MBO data, then paper-trade live in MES.
+\end{itemize}
 
 \addcontentsline{toc}{section}{References}
 \begin{thebibliography}{99}
 \small
-
 
 \bibitem{christodoulou2025}
 C.~N. Christodoulou-Volos,
@@ -507,14 +504,11 @@ Overfitting and Non-Normality,''
 pp.~94--107, 2014.
 \url{https://doi.org/10.3905/jpm.2014.40.5.094}
 
-
-
 \bibitem{Databento}
 Databento. (2026). GLBX.MDP3: CME Globex market data, MBP-10 schema. Databento.
 \url{https://databento.com/catalog/cme/GLBX.MDP3}
 
-
 \end{thebibliography}
- 
+
 \end{document}
  
