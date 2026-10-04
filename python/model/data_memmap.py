@@ -28,8 +28,8 @@ def load_memmap_tensor(
     # Zero-copy memory map on CPU
     mmap_arr = np.memmap(file_path, dtype=dtype, mode="r", shape=shape)
 
-    # Convert to PyTorch Tensor view
-    tensor_cpu = torch.from_numpy(mmap_arr)
+    # Copy the read-only mapping so PyTorch receives writable storage.
+    tensor_cpu = torch.from_numpy(np.array(mmap_arr, copy=True))
 
     # Handle device transfer with optional pinned memory
     if device.startswith("cuda"):
