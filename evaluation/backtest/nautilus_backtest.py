@@ -46,20 +46,25 @@ from nautilus_trader.model import InstrumentId, Venue
 from nautilus_trader.common import LogLevel
 from nautilus_trader.model import AccountType, BookType, Currency, OmsType
 
-from evaluation.backtest.metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
-from evaluation.backtest.split_sample import SampleSplitter, add_trading_day, trading_day_window
+from metrics import CostModel, compare_is_oos, performance_stats, plot_equity_curve
+from split_sample import SampleSplitter, add_trading_day, trading_day_window
 
 CATALOG_DIR = os.environ.get("CATALOG_DIR", "catalog")
 INSTRUMENT_ID = os.environ.get("INSTRUMENT_ID", "ESH4.GLBX")
 VENUE_NAME = INSTRUMENT_ID.split(".")[-1]  # "GLBX"
 
 # Frozen artifacts from the in-sample pipeline.
-BUNDLE_PATH = os.environ.get("BUNDLE_PATH", "data/ga_inputs/frozen_bundle.json")
-MODEL_PATH = os.environ.get("MODEL_PATH", "data/ga_inputs/xgboost_final.json")
+BUNDLE_PATH = os.environ.get("BUNDLE_PATH", "output/ga_results_january/frozen_bundle.json")
+MODEL_PATH = os.environ.get("MODEL_PATH", "output/models/xgboost_final.json")
+EVENT_FEATURES_PATH = os.environ.get(
+    "EVENT_FEATURES_PATH", "output/features/stationary_features_january.parquet"
+)
+print(BUNDLE_PATH)
+print(MODEL_PATH)
 
-# Full dotted path: you run `python -m evaluation.backtest.nautilus_backtest` from the
+# Full dotted path: you run `python -m nautilus_backtest` from the
 # repo root, so a bare "nautilus_strategy:..." would not be importable by Nautilus.
-STRATEGY_MODULE = os.environ.get("STRATEGY_MODULE", "evaluation.backtest.nautilus_strategy")
+STRATEGY_MODULE = os.environ.get("STRATEGY_MODULE", "nautilus_strategy")
 STRATEGY_PATH = f"{STRATEGY_MODULE}:XGBBookStateStrategy"
 STRATEGY_CONFIG_PATH = f"{STRATEGY_MODULE}:XGBBookStateConfig"
 
@@ -77,6 +82,7 @@ def default_params() -> dict:
     return {
         "bundle_path": BUNDLE_PATH,
         "model_path": MODEL_PATH,
+        "event_features_path": EVENT_FEATURES_PATH,
         "trade_size": 1,
         "holding_ms": 1500,        # set from the in-sample duration of the label horizon
         "min_interval_ms": 500,
