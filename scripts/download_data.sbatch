@@ -4,8 +4,8 @@
 #SBATCH --error=logs/download_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=64gb
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128gb
 #SBATCH --time=02:00:00
 #SBATCH --account=ai-workshop
 #SBATCH --qos=ai-workshop
