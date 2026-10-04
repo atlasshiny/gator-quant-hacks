@@ -26,8 +26,9 @@ class MicrostructureXGBTrainer:
         self.xgb_params = xgb_params or {
             "tree_method": "hist",
             "device": "cuda",
-            "objective": "binary:logistic",
-            "eval_metric": "auc",
+            "objective": "multi:softprob",
+            "num_class": 3,
+            "eval_metric": "mlogloss",
             "max_depth": 6,
             "learning_rate": 0.03,
             "subsample": 0.8,
@@ -40,8 +41,8 @@ class MicrostructureXGBTrainer:
         self,
     ) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray]:
         """
-        Loads stationary features and computes stationary binary targets.
-        Target = 1 if mid-price return over horizon exceeds fee threshold, else 0.
+        Loads stationary features and computes symmetric short/flat/long targets.
+        Labels are 0=short, 1=flat, and 2=long.
         """
         print(f"Loading feature dataset from {self.features_path}...")
         df = pl.read_parquet(self.features_path)
@@ -57,19 +58,26 @@ class MicrostructureXGBTrainer:
              / pl.col("mid_price")).alias("future_return")
         ])
 
-        # Create binary directional target above fee friction
+        # Create symmetric directional labels around the fee barrier.
         df = df.with_columns([
-            (pl.col("future_return") > self.fee_threshold).cast(pl.Int32).alias("target")
+            pl.when(pl.col("future_return") < -self.fee_threshold)
+            .then(0)
+            .when(pl.col("future_return") > self.fee_threshold)
+            .then(2)
+            .otherwise(1)
+            .cast(pl.Int32)
+            .alias("target")
         ])
 
         # Drop the boundary tail where shifted target is null
         df = df.drop_nulls(subset=["future_return"])
 
         # Separate feature columns from metadata/targets
-        ignore_cols = {
-            "ts_event", "ts_recv", "mid_price", "future_return", "target"
-        }
+        ignore_cols = {"ts_event", "ts_recv", "mid_price", "ask_px_00", "bid_px_00",
+                       "future_return", "target"}
         feature_cols = [c for c in df.columns if c not in ignore_cols]
+        if len(feature_cols) != 25:
+            raise ValueError(f"Expected 25 engineered features, got {len(feature_cols)}.")
 
         X = df.select(feature_cols).to_numpy().astype(np.float32)
         y = df.select("target").to_numpy().flatten().astype(np.int32)
@@ -78,7 +86,13 @@ class MicrostructureXGBTrainer:
         )
 
         print(f"Dataset shape: {X.shape[0]:,} rows x {X.shape[1]} features")
-        print(f"Target Class Balance: {np.mean(y) * 100:.2f}% positive labels")
+        counts = np.bincount(y, minlength=3)
+        print(
+            "Target Class Balance: "
+            f"short={counts[0] / len(y) * 100:.2f}%, "
+            f"flat={counts[1] / len(y) * 100:.2f}%, "
+            f"long={counts[2] / len(y) * 100:.2f}%"
+        )
         return X, y, feature_cols, forward_returns
 
     def train_purged_cv(
@@ -93,7 +107,7 @@ class MicrostructureXGBTrainer:
         Returns full out-of-fold predicted class probabilities.
         """
         n_samples = len(X)
-        oof_preds = np.full(n_samples, np.nan, dtype=np.float32)
+        oof_preds = np.full((n_samples, 3), np.nan, dtype=np.float32)
         split_size = n_samples // n_splits
         embargo_size = int(n_samples * embargo_pct)
 
@@ -128,7 +142,7 @@ class MicrostructureXGBTrainer:
 
             # Predict out-of-fold validation probabilities
             dval_predict = xgb.DMatrix(X_val)
-            oof_preds[val_start:val_end] = model.predict(dval_predict)
+            oof_preds[val_start:val_end] = model.predict(dval_predict).reshape(-1, 3)
 
         return oof_preds
 
@@ -139,15 +153,17 @@ class MicrostructureXGBTrainer:
         forward_returns: np.ndarray,
     ) -> None:
         """
-        Appends the XGBoost probability column to the microstructure feature matrix
+        Appends the three XGBoost class probabilities to the microstructure feature matrix
         and writes raw float32 binary arrays (.bin) for Triton loading.
         """
-        if X_features.shape[1] < 27:
-            raise ValueError("At least 27 base features are required for the Triton GA.")
-        valid = np.isfinite(xgb_probs)
+        if X_features.shape[1] != 25:
+            raise ValueError(f"Expected 25 base features, got {X_features.shape[1]}.")
+        if xgb_probs.shape != (X_features.shape[0], 3):
+            raise ValueError("Expected three class probabilities aligned to X_features.")
+        valid = np.isfinite(xgb_probs).all(axis=1)
         combined_features = np.hstack([
-            X_features[valid, :27],
-            xgb_probs[valid, None],
+            X_features[valid],
+            xgb_probs[valid],
         ]).astype(np.float32)
         valid_returns = forward_returns[valid].astype(np.float32)
 
@@ -170,8 +186,9 @@ if __name__ == "__main__":
         xgb_params={
             "tree_method": xgb_config.tree_method,
             "device": xgb_config.device,
-            "objective": "binary:logistic",
-            "eval_metric": "auc",
+            "objective": "multi:softprob",
+            "num_class": xgb_config.num_class,
+            "eval_metric": "mlogloss",
             "max_depth": xgb_config.max_depth,
             "learning_rate": xgb_config.learning_rate,
             "subsample": xgb_config.subsample,
