@@ -44,6 +44,7 @@ genetic_algorithm:
 
 slurm:
   partition: hpg-b200
+  gpu_type: b200
   cuda_module: cuda/12.8.1
   conda_environment: /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
   xgb_gpus: 1

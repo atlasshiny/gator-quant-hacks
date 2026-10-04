@@ -68,6 +68,7 @@ class SlurmConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     partition: str
+    gpu_type: str
     cuda_module: str
     conda_environment: Path
     xgb_gpus: int = Field(ge=0)
