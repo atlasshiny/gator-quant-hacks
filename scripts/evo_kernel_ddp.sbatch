@@ -6,7 +6,7 @@
 #SBATCH --nodes=1                      # DDP localhost restriction requires 1 node
 #SBATCH --ntasks=1                     # 1 Master task for mp.spawn
 #SBATCH --cpus-per-task=16             # Allocate enough CPU cores for fast memmap loading
-#SBATCH --mem=64gb                     # System RAM
+#SBATCH --mem=128gb                    # System RAM for two spawned loaders
 #SBATCH --partition=hpg-b200           # Target the DGX B200 partition
 #SBATCH --gpus=b200:2                  # Request exactly 2 GPUs
 #SBATCH --time=02:00:00                # Wall clock time limit (HH:MM:SS)
