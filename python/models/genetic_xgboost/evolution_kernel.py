@@ -57,10 +57,6 @@ def evolution_kernel_grid(
     z_trigger = threshold_raw.to(tl.float32) / 1000.0
     vol_target = risk_raw.to(tl.float32) / 1000.0
     
-    use_f0 = (feat_flags & 1) != 0
-    use_f1 = (feat_flags & 2) != 0
-    invert_signal = (feat_flags & 4) != 0
-
     # Accumulators for Higher-Order Moments
     sum_pnl = 0.0
     sum_pnl_2 = 0.0
@@ -74,23 +70,26 @@ def evolution_kernel_grid(
         mask = sample_offsets < n_samples
         active_mask = mask & (sample_offsets >= lookback_decoded)
 
-        f0_ptr = X_ptr + (sample_offsets * stride_sample) + 0
-        f0 = tl.load(f0_ptr, mask=mask, other=0.0)
-
-        f1_ptr = X_ptr + (sample_offsets * stride_sample) + 1
-        f1 = tl.load(f1_ptr, mask=mask, other=0.0)
+        selected_features = 0.0
+        for feature_idx in range(28):
+            feature = tl.load(
+                X_ptr + (sample_offsets * stride_sample) + feature_idx,
+                mask=mask,
+                other=0.0,
+            )
+            selected_features += tl.where(
+                ((feat_flags >> feature_idx) & 1) != 0, feature, 0.0
+            )
 
         ret = tl.load(returns_ptr + sample_offsets, mask=mask, other=0.0)
 
-        long_cond = tl.where(use_f0, f0 > z_trigger, True)
-        long_cond = long_cond & tl.where(use_f1, f1 < 1.5, True)
-        long_cond = tl.where(invert_signal, ~long_cond, long_cond)
-
-        sizing_feature = tl.where(use_f1, f1, 1.0)
-        size_multiplier = tl.where(
-            vol_target > 0.0, vol_target / tl.maximum(sizing_feature, 0.1), 1.0
+        has_features = feat_flags != 0
+        long_cond = has_features & (selected_features > z_trigger)
+        signal = tl.where(
+            active_mask & long_cond,
+            tl.where(vol_target > 0.0, vol_target, 1.0),
+            0.0,
         )
-        signal = tl.where(active_mask & long_cond, 1.0, 0.0) * size_multiplier
         strat_ret = signal * ret
 
         sum_pnl += tl.sum(strat_ret, axis=0)
@@ -149,14 +148,14 @@ def _count_rows_from_binary(file_path: str, n_features: int) -> int:
 def evaluate_population(
     data_bin_path: str,
     population_bitmasks: np.ndarray,
-    n_features: int = 8,
+    n_features: int = 28,
     returns_bin_path: str | None = None,
 ):
     population_bitmasks = np.asarray(population_bitmasks, dtype=np.uint64)
     if population_bitmasks.ndim != 1 or population_bitmasks.size == 0:
         raise ValueError("population_bitmasks must be a non-empty one-dimensional array.")
-    if n_features < 2:
-        raise ValueError("n_features must be at least 2 because the kernel reads features 0 and 1.")
+    if n_features < 28:
+        raise ValueError("n_features must be at least 28 for the feature flag mask.")
     n_population = population_bitmasks.shape[0]
 
     n_samples = _count_rows_from_binary(data_bin_path, n_features)
@@ -202,7 +201,7 @@ if __name__ == "__main__":
     test_file = "test_features.bin"
     returns_file = "test_returns.bin"
     
-    mock_features = np.random.randn(10_000, 8).astype(np.float32)
+    mock_features = np.random.randn(10_000, 28).astype(np.float32)
     mock_features[:, 1] = np.abs(mock_features[:, 1]) + 0.1 
     mock_features.tofile(test_file)
     
