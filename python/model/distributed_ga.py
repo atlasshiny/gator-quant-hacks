@@ -1,4 +1,7 @@
+import csv
+import json
 import os
+from pathlib import Path
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -100,6 +103,10 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
 
         print(f"[GPU {rank}] Island Initialized with {local_pop_size} strategies.")
 
+        output_dir = Path(os.environ["GA_OUTPUT_DIR"])
+        history: list[dict[str, float | int]] = []
+        global_best: dict[str, float | int] | None = None
+
         for gen in range(generations):
             fitness = evaluate_population(
                 data_bin_path=data_bin,
@@ -108,6 +115,41 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
             )
 
             best_idx = torch.argmax(fitness)
+            local_best_score = fitness[best_idx].detach()
+            local_best_bits = torch.tensor(
+                [local_population[best_idx.item() : best_idx.item() + 1].view(np.int64)[0]],
+                dtype=torch.int64,
+                device=f"cuda:{rank}",
+            )
+            gathered_scores = [
+                torch.empty(1, dtype=torch.float32, device=f"cuda:{rank}")
+                for _ in range(world_size)
+            ]
+            gathered_bits = [
+                torch.empty(1, dtype=torch.int64, device=f"cuda:{rank}")
+                for _ in range(world_size)
+            ]
+            dist.all_gather(gathered_scores, local_best_score.reshape(1))
+            dist.all_gather(gathered_bits, local_best_bits)
+
+            if rank == 0:
+                best_rank = max(
+                    range(world_size),
+                    key=lambda index: gathered_scores[index].item(),
+                )
+                best_score = gathered_scores[best_rank].item()
+                best_bits = np.array(
+                    [gathered_bits[best_rank].item()], dtype=np.int64
+                ).view(np.uint64)[0]
+                history.append({"generation": gen, "fitness": best_score})
+                global_best = {
+                    "generation": gen,
+                    "fitness": best_score,
+                    "chromosome": int(best_bits),
+                }
+                if gen % 10 == 0:
+                    print(f"[Generation {gen}] Best Deflated Sharpe on Cluster: {best_score:.3f}")
+
             local_elite_host = local_population[best_idx.item():best_idx.item() + 1].copy()
             local_population = crossover_and_mutate(local_population, fitness)
 
@@ -134,9 +176,29 @@ def run_island_node(rank, world_size, data_bin, returns_bin, total_population_si
                     ).view(np.uint64)[0]
                     local_population[-world_size + i] = received_bits
 
-            if rank == 0 and gen % 10 == 0:
-                top_score = torch.max(fitness).item()
-                print(f"[Generation {gen}] Best Deflated Sharpe on Cluster: {top_score:.3f}")
+        if rank == 0 and global_best is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            best_strategy = StrategyChromosome.decode(global_best["chromosome"])
+            result = {
+                **global_best,
+                "world_size": world_size,
+                "population": total_population_size,
+                "generations": generations,
+                "migration_frequency": migration_freq,
+                "features_path": data_bin,
+                "returns_path": returns_bin,
+                "strategy": best_strategy,
+            }
+            with (output_dir / "best_strategy.json").open("w", encoding="utf-8") as file:
+                json.dump(result, file, indent=2)
+            with (output_dir / "fitness_history.csv").open(
+                "w", newline="", encoding="utf-8"
+            ) as file:
+                writer = csv.DictWriter(file, fieldnames=["generation", "fitness"])
+                writer.writeheader()
+                writer.writerows(history)
+            print(f"Saved best strategy: {output_dir / 'best_strategy.json'}")
+            print(f"Saved fitness history: {output_dir / 'fitness_history.csv'}")
     finally:
         cleanup()
 
@@ -158,6 +220,7 @@ if __name__ == "__main__":
 
     data_bin = str(ga_config.features_path)
     returns_bin = str(ga_config.returns_path)
+    os.environ["GA_OUTPUT_DIR"] = str(ga_config.output_dir)
     for path in (data_bin, returns_bin):
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             raise FileNotFoundError(
