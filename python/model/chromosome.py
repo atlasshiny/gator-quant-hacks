@@ -13,7 +13,11 @@ class StrategyChromosomeSchema(BaseModel):
     Enforces structural boundaries before Triton kernel allocation.
     """
     feature_flags: BitRange = Field(
-        default=BitRange(name="feature_flags", bits=28, description="Boolean flags for 28 active features")
+        default=BitRange(
+            name="feature_flags",
+            bits=28,
+            description="Boolean flags for 25 base features and 3 class probabilities",
+        )
     )
     lookback_window: BitRange = Field(
         default=BitRange(name="lookback_window", bits=12, description="Gray-coded lookback length")
