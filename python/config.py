@@ -64,22 +64,6 @@ class GeneticAlgorithmConfig(BaseModel):
     migration_frequency: int = Field(gt=0)
     chromosome_features: int = Field(ge=28)
 
-class SlurmConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    partition: str
-    gpu_type: str
-    cuda_module: str
-    conda_environment: Path
-    xgb_gpus: int = Field(ge=0)
-    ga_gpus: int = Field(gt=0)
-    xgb_cpus: int = Field(gt=0)
-    ga_cpus: int = Field(gt=0)
-    xgb_memory: str
-    ga_memory: str
-    xgb_time: str
-    ga_time: str
-
 class EnvironmentConfig(BaseModel):
     """Values loaded from .env; secrets are never stored in config.yaml."""
 
@@ -115,7 +99,6 @@ class AppConfig(BaseModel):
     features: FeatureConfig
     xgboost: XGBoostConfig
     genetic_algorithm: GeneticAlgorithmConfig
-    slurm: SlurmConfig
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
 
 def _optional_secret(name: str) -> SecretStr | None:

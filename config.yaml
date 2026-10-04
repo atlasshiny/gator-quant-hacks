@@ -41,17 +41,3 @@ genetic_algorithm:
   generations: 100
   migration_frequency: 25
   chromosome_features: 28
-
-slurm:
-  partition: hpg-b200
-  gpu_type: b200
-  cuda_module: cuda/12.8.1
-  conda_environment: /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
-  xgb_gpus: 1
-  ga_gpus: 5
-  xgb_cpus: 16
-  ga_cpus: 16
-  xgb_memory: 64gb
-  ga_memory: 64gb
-  xgb_time: "04:00:00"
-  ga_time: "01:00:00"
