@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import xgboost as xgb
-from python.config import load_config
+from config import load_config
 
 class MicrostructureXGBTrainer:
     def __init__(
