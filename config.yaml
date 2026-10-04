@@ -1,0 +1,55 @@
+experiment:
+  name: mbp10_microstructure_ga
+  description: GPU-accelerated MBP-10 feature engineering, XGBoost, and genetic strategy search.
+
+data:
+  dataset: GLBX.MDP3
+  symbol: ES.c.0
+  schema: mbp-10
+  stype_in: continuous
+  start: "2024-01-08T00:00:00Z"
+  end: "2024-01-12T23:59:59Z"
+  parquet_dir: data/GLBX.MDP3
+  unified_bin: data/unified_mbp10.bin
+
+features:
+  stationary_parquet: data/stationary_features.parquet
+  expected_base_features: 27
+  total_kernel_features: 28
+
+xgboost:
+  features_path: data/stationary_features.parquet
+  output_dir: data/ga_inputs
+  target_horizon_events: 100
+  fee_threshold_bps: 1.5
+  folds: 5
+  embargo_pct: 0.01
+  tree_method: hist
+  device: cuda
+  num_boost_round: 800
+  early_stopping_rounds: 40
+  max_depth: 6
+  learning_rate: 0.03
+  subsample: 0.8
+  colsample_bytree: 0.8
+
+genetic_algorithm:
+  features_path: data/ga_inputs/features.bin
+  returns_path: data/ga_inputs/returns.bin
+  population: 20000
+  generations: 100
+  migration_frequency: 25
+  chromosome_features: 28
+
+slurm:
+  partition: hpg-b200
+  cuda_module: cuda/12.8.1
+  conda_environment: /blue/ai-workshop/osoriom/gator-quant-hacks/.venv
+  xgb_gpus: 1
+  ga_gpus: 5
+  xgb_cpus: 16
+  ga_cpus: 16
+  xgb_memory: 64gb
+  ga_memory: 64gb
+  xgb_time: "04:00:00"
+  ga_time: "01:00:00"
