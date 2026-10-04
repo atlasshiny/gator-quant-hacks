@@ -12,6 +12,7 @@ dependencies = [
     "polars",
     "torch>=2.4.0",
     "triton>=3.0.0",
+    "xgboost",
 ]
 
 [[tool.uv.index]]
